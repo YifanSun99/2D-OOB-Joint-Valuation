@@ -388,14 +388,14 @@ class RandomForestClassifierDV(RandomForestClassifier):
         return np.mean(df_oob, axis=0)
     
     
-    def evaluate_dfoob_accuracy(self, X, y):
+    def evaluate_dfoob_accuracy(self, X, y, adjust = True):
         import pandas as pd
         assert len(self.estimators_)!=0, 'Run fit first. self.estimators_ is not defined'
         assert len(self._ensemble_X)!=0, 'Run evaluate_importance first. self._ensemble_X is not defined'
         
         self._ensemble_features = []
         for b in range(self.n_estimators):
-            self._ensemble_features.append((self.estimators_[b].feature_importances_ == 0).astype(int))
+            self._ensemble_features.append((self.estimators_[b].feature_importances_ != 0).astype(int))
         dfoob = {}
         n = X.shape[0]
         m = X.shape[1]
@@ -408,16 +408,18 @@ class RandomForestClassifierDV(RandomForestClassifier):
         for i, weak_learner in enumerate(self.estimators_):
             oob_ind=np.where(self._ensemble_X[i] == 0)[0]
             oob_acc=(weak_learner.predict(X[oob_ind])==y[oob_ind]).astype(float)
-
-            for ind, j in enumerate(oob_acc):    
-                for feature_ind in range(m):
-                    dfoob[(oob_ind[ind],feature_ind)][1] += 1
+            
+            if adjust:
+                for ind, j in enumerate(oob_acc):    
+                    for feature_ind in range(m):
+                        dfoob[(oob_ind[ind],feature_ind)][1] += 1
+                    for feature_ind in ensemble_features_index[i]:
+                        dfoob[(oob_ind[ind],feature_ind)][0] += j
+            else:
                 for feature_ind in ensemble_features_index[i]:
-                    dfoob[(oob_ind[ind],feature_ind)][0] += j
-            # for feature_ind in ensemble_features_index[i]:
-            #     for ind, j in enumerate(oob_acc):
-            #         dfoob[(oob_ind[ind],feature_ind)][0] += j
-            #         dfoob[(oob_ind[ind],feature_ind)][1] += 1
+                    for ind, j in enumerate(oob_acc):
+                        dfoob[(oob_ind[ind],feature_ind)][0] += j
+                        dfoob[(oob_ind[ind],feature_ind)][1] += 1
         
         
         for key,values in dfoob.items():

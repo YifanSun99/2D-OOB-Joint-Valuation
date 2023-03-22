@@ -125,12 +125,17 @@ class FeatureApproach(object):
             self.rf_model=RandomForestRegressorDV(n_estimators=self.n_trees, n_jobs=-1) 
         self.rf_model.fit(self.X, self.y)
         self.time_dict['DF_oob_RF_fitting']=time()-time_init
-        df_oob_series = self.rf_model.evaluate_dfoob_accuracy(self.X, self.y)
-        self.df_value_dict['Df-OOB'] = df_oob_series
-        
-        df_oob_data, df_oob_feature = df_oob_agg(df_oob_series)
-        self.data_value_dict['Df-OOB-data']=df_oob_data.to_numpy()
-        self.feature_value_dict['Df-OOB-feature']=df_oob_feature.to_numpy()
-        self.feature_value_dict['Df-OOB-error-feature']=1-df_oob_feature.to_numpy()
+        df_oob_series_adj = self.rf_model.evaluate_dfoob_accuracy(self.X, self.y, adjust = True)
+        df_oob_series_unadj = self.rf_model.evaluate_dfoob_accuracy(self.X, self.y, adjust = False)
+        self.df_value_dict['Df-OOB-adj'] = df_oob_series_adj
+        self.df_value_dict['Df-OOB-unadj'] = df_oob_series_unadj
+
+        df_oob_data_adj, df_oob_feature_adj = df_oob_agg(df_oob_series_adj)
+        df_oob_data_unadj, df_oob_feature_unadj = df_oob_agg(df_oob_series_unadj)
+
+        self.data_value_dict['Df-OOB-data']=df_oob_data_adj.to_numpy()
+        self.feature_value_dict['Df-OOB-feature']=df_oob_feature_adj.to_numpy()
+        self.data_value_dict['Df-OOB-data-unadj']=df_oob_data_unadj.to_numpy()
+        self.feature_value_dict['Df-OOB-feature-unadj']=df_oob_feature_unadj.to_numpy()
         self.time_dict['Df-OOB']=time()-time_init
         print(f'Done: DF-OOB computation')
