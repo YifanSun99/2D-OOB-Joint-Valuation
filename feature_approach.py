@@ -48,9 +48,11 @@ class FeatureApproach(object):
         self.df_value_dict=defaultdict(list)
         self.time_dict=defaultdict(list) 
 
-    def run(self, AME_run=True, lasso_run=True, boosting_run=True, treeshap_run=True, bagging_run=True, simple_run=False):
-        self._calculate_proposed_data_oob()
-        self._calculate_proposed_df_oob()
+    def run(self, AME_run=True, lasso_run=True, boosting_run=True, treeshap_run=True, bagging_run=True, simple_run=False, data_oob_run=True, df_oob_run=True):
+        if data_oob_run:
+            self._calculate_proposed_data_oob()
+        if df_oob_run:
+            self._calculate_proposed_df_oob()
         if AME_run is True: self._calculate_AME()
             
     def _calculate_AME(self):
@@ -129,5 +131,6 @@ class FeatureApproach(object):
         df_oob_data, df_oob_feature = df_oob_agg(df_oob_series)
         self.data_value_dict['Df-OOB-data']=df_oob_data.to_numpy()
         self.feature_value_dict['Df-OOB-feature']=df_oob_feature.to_numpy()
+        self.feature_value_dict['Df-OOB-error-feature']=1-df_oob_feature.to_numpy()
         self.time_dict['Df-OOB']=time()-time_init
         print(f'Done: DF-OOB computation')

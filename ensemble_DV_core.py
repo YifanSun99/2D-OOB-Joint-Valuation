@@ -408,11 +408,17 @@ class RandomForestClassifierDV(RandomForestClassifier):
         for i, weak_learner in enumerate(self.estimators_):
             oob_ind=np.where(self._ensemble_X[i] == 0)[0]
             oob_acc=(weak_learner.predict(X[oob_ind])==y[oob_ind]).astype(float)
-            
-            for feature_ind in ensemble_features_index[i]:
-                for ind, j in enumerate(oob_acc):
-                    dfoob[(oob_ind[ind],feature_ind)][0] += j
+
+            for ind, j in enumerate(oob_acc):    
+                for feature_ind in range(m):
                     dfoob[(oob_ind[ind],feature_ind)][1] += 1
+                for feature_ind in ensemble_features_index[i]:
+                    dfoob[(oob_ind[ind],feature_ind)][0] += j
+            # for feature_ind in ensemble_features_index[i]:
+            #     for ind, j in enumerate(oob_acc):
+            #         dfoob[(oob_ind[ind],feature_ind)][0] += j
+            #         dfoob[(oob_ind[ind],feature_ind)][1] += 1
+        
         
         for key,values in dfoob.items():
             if values[1] == 0:

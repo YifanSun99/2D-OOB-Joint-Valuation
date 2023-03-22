@@ -70,22 +70,24 @@ def generate_config(expno_name,
             run = copy.deepcopy(run_temp) 
             run['run_id'] = run_id
             dargs_list=[]
-            is_noisy=0.1 
+            is_noisy=0.1
             n_trees=800
-            for n_data_to_be_valued in [1000, 10000]:
-                for input_dim in [25, 50, 100]:
-                    for masked_ratio in [0.5, 0.7, 0.9]:
-                        dargs_list.append({'n_data_to_be_valued':n_data_to_be_valued, 
-                                            'n_val':(n_data_to_be_valued//10), 
-                                            'n_test':n_test,
-                                            'n_trees':n_trees,
-                                            'masked_ratio':masked_ratio,
-                                            # 'clf_path':exp['clf_path'],# Note here
-                                            # 'openml_path':exp['openml_path'],
-                                            'is_noisy':is_noisy,
-                                            'model_family':model_family,
-                                            'input_dim':input_dim,
-                                            'run_id':run_id})
+            for n_data_to_be_valued in [5000, 25000]:
+                for input_dim in [25, 100]:
+                    for masked_ratio in [0.5, 0.9]:
+                        for rho in [0, 0.2, 0.6]:
+                            dargs_list.append({'n_data_to_be_valued':n_data_to_be_valued, 
+                                                'n_val':(n_data_to_be_valued//10), 
+                                                'n_test':n_test,
+                                                'n_trees':n_trees,
+                                                'masked_ratio':masked_ratio,
+                                                # 'clf_path':exp['clf_path'],# Note here
+                                                # 'openml_path':exp['openml_path'],
+                                                'is_noisy':is_noisy,
+                                                'model_family':model_family,
+                                                'input_dim':input_dim,
+                                                'run_id':run_id,
+                                                'rho':rho})
             run['dargs_list'] = dargs_list
             runs.append(run)
 

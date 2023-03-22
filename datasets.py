@@ -26,7 +26,8 @@ def load_data(problem, dataset, **dargs):
                                                                             input_dim=dargs.get('input_dim', 10),
                                                                             clf_path=dargs.get('clf_path'),
                                                                             openml_path=dargs.get('openml_clf_path'),
-                                                                            masked_ratio = dargs['masked_ratio'])
+                                                                            masked_ratio = dargs['masked_ratio'],
+                                                                            rho=dargs['rho'])
         if dargs['is_noisy'] > 0:
             n_class=len(np.unique(y))
 
@@ -122,7 +123,8 @@ def load_classification_dataset(dataset,
                                 input_dim=10,
                                 clf_path='clf_path',
                                 openml_path='openml_path',
-                                masked_ratio=0.5):
+                                masked_ratio=0.5,
+                                rho=0):
     '''
     This function loads classification datasets.
     n_data_to_be_valued: The number of data points to be valued.
@@ -136,7 +138,13 @@ def load_classification_dataset(dataset,
         print('GAUSSIAN-C')
         print('-'*50)
         n, input_dim=max(100000, n_data_to_be_valued+n_val+n_test+1), input_dim
-        data = np.random.normal(size=(n,input_dim))
+        
+        if rho != 0:
+            U_cov = np.diag((1-rho)*np.ones(input_dim))+rho
+            U_mean = np.zeros(input_dim)
+            data = np.random.multivariate_normal(U_mean, U_cov, n)
+        else:
+            data = np.random.normal(size=(n,input_dim))
         # beta_true = np.array([2.0, 1.0, 0.0, 0.0, 0.0]).reshape(input_dim,1)
         beta_true = np.random.normal(size=input_dim).reshape(input_dim,1)
         beta_masked = np.random.choice(input_dim, int(input_dim*masked_ratio), replace=False)

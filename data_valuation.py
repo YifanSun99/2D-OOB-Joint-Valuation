@@ -57,7 +57,8 @@ class DataValuation(object):
         self.masked_detect_dict=defaultdict(list)
         self.removal_dict=defaultdict(list)
         self.learn_dict=defaultdict(list)
-        self.corr_dict=defaultdict(list)
+        self.rank_dict=defaultdict(list)
+        self.new_evaluation_dict=defaultdict(list)
 
     def evaluate_baseline_models(self, X_test, y_test):
         if self.problem == 'clf':
@@ -142,7 +143,7 @@ class DataValuation(object):
         self.data_shap_engine.run(loo_run=loo_run, betashap_run=betashap_run)
         self._dict_update(self.data_shap_engine)
 
-    def compute_feature_shap(self, AME_run=True, lasso_run=True, boosting_run=True, treeshap_run=True, simple_run=False):
+    def compute_feature_shap(self, AME_run=True, lasso_run=True, boosting_run=True, treeshap_run=True, simple_run=False, data_oob_run=True, df_oob_run=True):
         '''
         We regard the data valuation problem as feature attribution problem
         This function computes feature attribution methods
@@ -155,7 +156,11 @@ class DataValuation(object):
                                      lasso_run=lasso_run, 
                                      boosting_run=boosting_run,
                                      treeshap_run=treeshap_run,
-                                     simple_run=simple_run)
+                                     simple_run=simple_run,
+                                     data_oob_run=data_oob_run,
+                                     df_oob_run=df_oob_run)
+        
+        self.rf_model_original = self.feature_shap_engine.rf_model_original
         self._dict_update(self.feature_shap_engine)
 
     def _dict_update(self, engine):
@@ -184,8 +189,11 @@ class DataValuation(object):
             self.time_dict['Eval:removal']=time()-time_init
         
         time_init=time()
-        self.corr_dict=utils_eval.corr_experiment(self.feature_value_dict, beta_true)
-        self.time_dict['Eval:corr']=time()-time_init
+        self.rank_dict=utils_eval.rank_experiment(self.feature_value_dict, beta_true)
+        self.time_dict['Eval:rank']=time()-time_init
+        
+        
+        
         
     def save_results(self, runpath, dataset, dargs_ind, noisy_index, beta_true):
         self.sparsity_dict=defaultdict(list)
@@ -210,9 +218,10 @@ class DataValuation(object):
                      'noisy_index': noisy_index,
                      'beta_true': beta_true,
                      'learn': self.learn_dict,
-                     "corr":self.corr_dict,
+                     "rank":self.rank_dict,
                      # 'baseline_score':self.baseline_score_dict,
-                     'rf_score':self.rf_evaluation_dict}
+                     'rf_score':self.rf_evaluation_dict,
+                     'new':self.new_evaluation_dict}
                      
         with open(runpath+f'/run_id{self.run_id}_{dargs_ind}.pkl', 'wb') as handle:
             pickle.dump(result_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)

@@ -62,7 +62,7 @@ def run_experiment_core(config):
         data_valuation_engine.evaluate_data_values(noisy_index, beta_true, X_test, y_test, removal_run=removal_run)
 
         # save results
-        data_valuation_engine.save_results(runpath, dataset, dargs_ind, noisy_index, beta_true)
+        data_valuation_engine.save_results(runpath, dataset, dargs_ind, noisy_index, beta_true, rho)
 
         if len(X) == 1000 and dargs['run_id'] <= 2:
             run_id=dargs['run_id']

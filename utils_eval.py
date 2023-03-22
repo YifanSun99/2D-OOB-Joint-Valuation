@@ -1,27 +1,16 @@
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression, LinearRegression
-from sklearn.metrics import precision_recall_curve, auc
+from sklearn.metrics import precision_recall_curve, auc, ndcg_score
 from sklearn.cluster import KMeans
 from scipy.integrate import simpson
-from scipy.stats import pearsonr, rankdata
+from scipy.stats import spearmanr, rankdata, ttest_ind, norm, weightedtau
+import xgboost as xgb
+
 
 '''
 noisy detection task
 '''
-
-def rankcorr(attrA, attrB, k):
-    corrs = []
-    # rank features (accounting for ties)
-    # rankdata gives rank1 for smallest # --> we want rank1 for largest # (aka # with largest magnitude)
-    all_feat_ranksA = rankdata(-np.abs(attrA), method='ordinal', axis=1)
-    all_feat_ranksB = rankdata(-np.abs(attrB), method='ordinal', axis=1)
-
-    for n in range(2,k):
-        rho, _ = pearsonr(all_feat_ranksA[all_feat_ranksA <= n], all_feat_ranksB[all_feat_ranksA <= n])
-        corrs.append(rho)
-
-    return simpson(corrs, dx = 1)
 
 def noisy_detection_experiment(value_dict, noisy_index):
     noisy_score_dict=dict()
@@ -41,13 +30,40 @@ def masked_detection_experiment(value_dict, masked_index):
                 'Results': masked_score_dict}
     return masked_dict
 
-def corr_experiment(value_dict, beta_true):
-    corr_score_dict=dict()
+def rank_experiment(value_dict, beta_true):
+    rank_score_dict=dict()
     for key in value_dict.keys():
-        corr_score_dict[key]=corr_evaluation_core(value_dict[key], beta_true)
-    corr_dict={'Meta_Data': ['Corr'],
-                'Results': corr_score_dict}
-    return corr_dict
+        rank_score_dict[key]=(corr_evaluation_core(value_dict[key], beta_true),
+                              ndcg_evaluation_core(value_dict[key], beta_true),
+                              # weightedtau(np.abs(beta_true), np.abs(value_dict[key]))[0]
+                              )
+    rank_dict={'Meta_Data': ['Corr'
+                             ,'NDCG'
+                             # ,'Tau'
+                             ],
+                'Results': rank_score_dict}
+    return rank_dict
+
+def ndcg_evaluation_core(value, beta_true):
+    ndcgs = []
+    k = (beta_true != 0).sum()
+    for n in range(2,k):
+        ndcgs.append(ndcg_score(np.abs(beta_true).reshape(1,-1), np.abs(value).reshape(1,-1)))
+    return simpson(ndcgs, dx = 1)
+
+def rankcorr(attrA, attrB, k):
+    corrs = []
+    # rank features (accounting for ties)
+    # rankdata gives rank1 for smallest # --> we want rank1 for largest # (aka # with largest magnitude)
+    all_feat_ranksA = rankdata(-np.abs(attrA), method='ordinal', axis=1)
+    all_feat_ranksB = rankdata(-np.abs(attrB), method='ordinal', axis=1)
+
+    for n in range(2,k):
+        rho = (spearmanr(all_feat_ranksA[all_feat_ranksA <= n], all_feat_ranksB[all_feat_ranksA <= n])[0] + 
+                  spearmanr(all_feat_ranksA[all_feat_ranksB <= n], all_feat_ranksB[all_feat_ranksB <= n])[0])/2
+        corrs.append(rho)
+
+    return simpson(corrs, dx = 1)
 
 def corr_evaluation_core(value, beta_true):
     attrA = np.abs(beta_true).reshape(1, -1)
@@ -135,4 +151,100 @@ def point_removal_core(X, y, X_test, y_test, value_list, ascending=True, problem
         accuracy_list.append(model_score)
         
     return simpson(accuracy_list[:int(len(accuracy_list)/5)], dx = n_period/100)
+
+
+def array_not_in_indices(arr, indices):
+    return np.array([arr[i] for i in range(len(arr)) if i not in indices])
+    
+def generate_data(n, input_dim, beta_true, mislabel = True, rho = 0):
+    if rho != 0:
+        U_cov = np.diag((1-rho)*np.ones(input_dim))+rho
+        U_mean = np.zeros(input_dim)
+        data = np.random.multivariate_normal(U_mean, U_cov, n)
+    else:
+        data = np.random.normal(size=(n,input_dim))
+    p_true = np.exp(data.dot(beta_true))/(1.+np.exp(data.dot(beta_true)))
+    target = np.random.binomial(n=1, p=p_true).reshape(-1)
+    
+    if mislabel:
+        target = 1 - target
+    return data, target
+
+def ecdf(arr):
+    n = len(arr)
+    x = np.sort(arr)
+    y = np.arange(1, n+1) / n
+    return x, y
+
+def find_quantile_ecdf(arr, num):
+    x, y = ecdf(arr)
+    index = np.searchsorted(x, num)
+    if index == 0:
+        return 0.0
+    elif index == len(x):
+        return 1.0
+    else:
+        left_x, right_x = x[index-1], x[index]
+        left_y, right_y = y[index-1], y[index]
+        slope = (right_y - left_y) / (right_x - left_x)
+        quantile = left_y + slope * (num - left_x)
+        return quantile
+    
+def mean_ci(data, confidence=0.95):
+    sample_mean = np.mean(data)
+    sample_std = np.std(data, ddof=1)
+
+    standard_error = sample_std / np.sqrt(len(data))
+
+    alpha = 1 - confidence
+    z_critical = norm.ppf(1 - alpha / 2)
+
+    lower_bound = sample_mean - z_critical * standard_error
+    upper_bound = sample_mean + z_critical * standard_error
+
+    return lower_bound, upper_bound
+
+def evalution_new(oob, noisy_index, model, X_y, beta_true, rho):
+    n = X_y.shape[0]
+    input_dim = X_y.shape[1]-1
+    labeled_X, labeled_y = generate_data(n, input_dim, beta_true, mislabel = False, rho = rho)
+    mislabeled_X, mislabeled_y = generate_data(n, input_dim, beta_true, mislabel = True, rho = rho)
+
+    labeled_data = xgb.DMatrix(np.concatenate((labeled_X,labeled_y.reshape(-1,1)), axis=1))
+    mislabeled_data = xgb.DMatrix(np.concatenate((mislabeled_X,mislabeled_y.reshape(-1,1)), axis=1))
+    
+    assert(labeled_data.num_col() == input_dim+1)
+    assert(mislabeled_data.num_col() == input_dim+1)
+
+    new_clean = model.predict(labeled_data)
+    new_noisy = model.predict(mislabeled_data)
+    
+    oob_clean = array_not_in_indices(oob, noisy_index)
+    oob_noisy = oob[noisy_index]
+    
+    assert(len(oob_clean) == len(oob)-len(noisy_index))
+    assert(len(oob_noisy) == len(noisy_index))
+
+    new_clean_quantile = np.array([find_quantile_ecdf(oob,i) for i in new_clean])
+    new_noisy_quantile = np.array([find_quantile_ecdf(oob,i) for i in new_noisy])
+    
+    return {
+        'oob_clean_mean':oob_clean.mean(),
+        'oob_noisy_mean':oob_noisy.mean(),
+        'oob_clean_CI':mean_ci(oob_clean),
+        'oob_noisy_CI':mean_ci(oob_noisy),
+        'oob_ttest':ttest_ind(oob_clean,oob_noisy)[1],
+        
+        'new_clean_mean':new_clean.mean(),
+        'new_noisy_mean':new_noisy.mean(),
+        'new_clean_CI':mean_ci(new_clean),
+        'new_noisy_CI':mean_ci(new_noisy),
+        'new_ttest':ttest_ind(new_clean,new_noisy)[1],
+        
+        'new_clean_quantile_mean':new_clean_quantile.mean(),
+        'new_noisy_quantile_mean':new_noisy_quantile.mean(),
+        'new_clean_quantile_CI':mean_ci(new_clean_quantile),
+        'new_noisy_quantile_CI':mean_ci(new_noisy_quantile),        
+        'new_quantile_ttest':ttest_ind(new_clean_quantile,new_noisy_quantile)[1],
+    }
 

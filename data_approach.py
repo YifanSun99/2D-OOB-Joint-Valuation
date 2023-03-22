@@ -77,7 +77,7 @@ class DataApproach(object):
         Args:
             loo_run: If True, computes and saves leave-one-out (LOO) scores.
         """
-        if len(self.X) <= 500000: self._calculate_knn()
+        # if len(self.X) <= 500000: self._calculate_knn()
         if loo_run is True: self._calculate_loo()
         if betashap_run is True and len(self.X) <= 1000: self._calculate_betashap()
     
