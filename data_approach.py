@@ -71,14 +71,14 @@ class DataApproach(object):
         
         return self.model.score(X, y)
 
-    def run(self, loo_run=True, betashap_run=True):
+    def run(self, loo_run=False, betashap_run=True):
         """
         Calculates data values.
         Args:
             loo_run: If True, computes and saves leave-one-out (LOO) scores.
         """
-        # if len(self.X) <= 500000: self._calculate_knn()
-        if loo_run is True: self._calculate_loo()
+        if len(self.X) <= 500000: self._calculate_knn()
+        # if loo_run is True: self._calculate_loo()
         if betashap_run is True and len(self.X) <= 1000: self._calculate_betashap()
     
     def _calculate_loo(self):
@@ -169,13 +169,13 @@ class DataApproach(object):
         self.time_dict['Data_Shapley']=time()-time_init
 
         # put more weights on marginal contributions based on small cardinalities.
-        self.weight_list=self.compute_weight_list(N_total=self.n_points, alpha_param=16, beta_param=1)
-        self.data_value_dict['Beta_Shapley(16,1)']=np.sum(self.marginal_contribution*self.weight_list, axis=1)
-        self.time_dict['Beta_Shapley(16,1)']=self.time_dict['Data_Shapley']
+        # self.weight_list=self.compute_weight_list(N_total=self.n_points, alpha_param=16, beta_param=1)
+        # self.data_value_dict['Beta_Shapley(16,1)']=np.sum(self.marginal_contribution*self.weight_list, axis=1)
+        # self.time_dict['Beta_Shapley(16,1)']=self.time_dict['Data_Shapley']
 
-        self.weight_list=self.compute_weight_list(N_total=self.n_points, alpha_param=4, beta_param=1)
-        self.data_value_dict['Beta_Shapley']=np.sum(self.marginal_contribution*self.weight_list, axis=1)
-        self.time_dict['Beta_Shapley']=self.time_dict['Data_Shapley']
+        # self.weight_list=self.compute_weight_list(N_total=self.n_points, alpha_param=4, beta_param=1)
+        # self.data_value_dict['Beta_Shapley']=np.sum(self.marginal_contribution*self.weight_list, axis=1)
+        # self.time_dict['Beta_Shapley']=self.time_dict['Data_Shapley']
         print(f'Done: Beta_Shapley computation')
 
     def _calculate_marginal_contributions(self):

@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 import pickle
+from scipy.stats import t
+
 
 def load_data(problem, dataset, **dargs):
     '''
@@ -12,122 +14,134 @@ def load_data(problem, dataset, **dargs):
     print(dargs)
         
     if problem=='reg':
-        (X, y), (X_val, y_val), (X_test, y_test) = load_regression_dataset(dataset=dataset,
-                                                                           n_data_to_be_valued=dargs['n_data_to_be_valued'],
-                                                                           n_val=dargs['n_val'],
-                                                                           n_test=dargs['n_test'],
-                                                                           openml_path=dargs.get('openml_reg_path')) 
-        return (X, y), (X_val, y_val), (X_test, y_test), None, None
+        raise NotImplementedError('Reg problem not implemented yet!')
+        # (X, y), (X_val, y_val), (X_test, y_test) = load_regression_dataset(dataset=dataset,
+        #                                                                    n_train=dargs['n_train'],
+        #                                                                    n_val=dargs['n_val'],
+        #                                                                    n_test=dargs['n_test'],
+        #                                                                    openml_path=dargs.get('openml_reg_path')) 
+        # return (X, y), (X_val, y_val), (X_test, y_test), None, None, None, None, None
     elif problem=='clf':
-        (X, y), (X_val, y_val), (X_test, y_test), beta_true = load_classification_dataset(dataset=dataset,
-                                                                            n_data_to_be_valued=dargs['n_data_to_be_valued'],
+        (X, y), (X_val, y_val), (X_test, y_test), beta_true, error_index, error_row_index, X_original = load_classification_dataset(dataset=dataset,
+                                                                            experiment=dargs.get('experiment'),
+                                                                            n_train=dargs['n_train'],
                                                                             n_val=dargs['n_val'],
                                                                             n_test=dargs['n_test'],
-                                                                            input_dim=dargs.get('input_dim', 10),
+                                                                            input_dim=dargs.get('input_dim'),
                                                                             clf_path=dargs.get('clf_path'),
                                                                             openml_path=dargs.get('openml_clf_path'),
-                                                                            masked_ratio = dargs['masked_ratio'],
-                                                                            rho=dargs['rho'])
-        if dargs['is_noisy'] > 0:
+                                                                            mask_ratio=dargs.get('mask_ratio'),
+                                                                            rho=dargs.get('rho'),
+                                                                            base=dargs.get('base'),
+                                                                            error_row_rate=dargs.get('error_row_rate'),
+                                                                            error_col_rate=dargs.get('error_col_rate'),
+                                                                            error_mech=dargs.get('error_mech'))
+        if dargs['experiment'] == 'noisy':
             n_class=len(np.unique(y))
 
             # training is flipped
-            flipped_index=np.random.choice(np.arange(dargs['n_data_to_be_valued']), 
-                                           int(dargs['n_data_to_be_valued']*dargs['is_noisy']), 
+            noisy_index=np.random.choice(np.arange(dargs['n_train']), 
+                                           int(dargs['n_train']*dargs['is_noisy']), 
                                            replace=False) 
-            random_shift=np.random.choice(n_class-1, len(flipped_index), replace=True)
-            y[flipped_index]=(y[flipped_index] + 1 + random_shift) % n_class
+            random_shift=np.random.choice(n_class-1, len(noisy_index), replace=True)
+            y[noisy_index]=(y[noisy_index] + 1 + random_shift) % n_class
 
             # validation is also flipped
-            flipped_val_index=np.random.choice(np.arange(dargs['n_val']),
+            noisy_val_index=np.random.choice(np.arange(dargs['n_val']),
                                                int(dargs['n_val']*dargs['is_noisy']), 
                                                replace=False) 
-            random_shift=np.random.choice(n_class-1, len(flipped_val_index), replace=True)
-            y_val[flipped_val_index]=(y_val[flipped_val_index] + 1 + random_shift) % n_class 
+            random_shift=np.random.choice(n_class-1, len(noisy_val_index), replace=True)
+            y_val[noisy_val_index]=(y_val[noisy_val_index] + 1 + random_shift) % n_class 
         else:
-            return (X, y), (X_val, y_val), (X_test, y_test), None, beta_true
+            noisy_index = None
 
-        return (X, y), (X_val, y_val), (X_test, y_test), flipped_index, beta_true
+        return (X, y), (X_val, y_val), (X_test, y_test), noisy_index, beta_true, error_index, error_row_index, X_original
     else:
         raise NotImplementedError('Check problem')
 
-def load_regression_dataset(n_data_to_be_valued=200,
-                             n_val=100,
-                             n_test=1000,
-                             dataset='gaussian',
-                             openml_path='openml_path'):
-    '''
-    This function loads regression datasets.
-    n_data_to_be_valued: The number of data points to be valued.
-    n_val: Validation size. Validation dataset is used to evalute utility function.
-    n_test: Test size. Test dataset is used to evalute model performance.
-    openml_path: path to openml datasets.
-    '''
-    if dataset == 'gaussian':
-        print('-'*50)
-        print('GAUSSIAN-R')
-        print('-'*50)
-        n, input_dim = 50000, 10
-        X_raw = np.random.normal(size=(n,input_dim))
-        beta = np.random.normal(size=(input_dim,1))
-        error_raw = np.random.normal(size=(n,1))
-        Y_raw = X_raw.dot(beta) + error_raw
-        data, target = X_raw, Y_raw
-    elif dataset == 'wave_energy':
-        print('-'*50)
-        print('wave_energy')
-        print('-'*50)
-        data_dict=pickle.load(open(openml_path+'/wave_energy_44975.pkl', 'rb'))
-        data, target = data_dict['X_num'], data_dict['y']  
-    elif dataset == 'lowbwt':
-        print('-'*50)
-        print('lowbwt')
-        print('-'*50)
-        data_dict=pickle.load(open(openml_path+'/BNG(lowbwt)_1193.pkl', 'rb'))
-        data, target = data_dict['X_num'], data_dict['y'] 
-    elif dataset == 'mv':
-        print('-'*50)
-        print('mv')
-        print('-'*50)
-        data_dict=pickle.load(open(openml_path+'/mv_344.pkl', 'rb'))
-        data, target = data_dict['X_num'], data_dict['y']  
-    elif dataset == 'Job_Profitability':
-        print('-'*50)
-        print('Job_Profitability')
-        print('-'*50)
-        data_dict=pickle.load(open(openml_path+'/Job_Profitability_44311.pkl', 'rb'))
-        data, target = data_dict['X_num'], data_dict['y']  
-    elif dataset == 'stock':
-        print('-'*50)
-        print('stock')
-        print('-'*50)
-        data_dict=pickle.load(open(openml_path+'/BNG(stock)_1200.pkl', 'rb'))
-        data, target = data_dict['X_num'], data_dict['y']  
-    elif dataset == 'echoMonths':
-        print('-'*50)
-        print('echoMonths')
-        print('-'*50)
-        data_dict=pickle.load(open(openml_path+'/BNG(echoMonths)_1199.pkl', 'rb'))
-        data, target = data_dict['X_num'], data_dict['y']  
-    else:
-        assert False, f"Check {dataset}."
+# def load_regression_dataset(n_train=200,
+#                              n_val=100,
+#                              n_test=1000,
+#                              dataset='gaussian',
+#                              openml_path='openml_path'):
+#     '''
+#     This function loads regression datasets.
+#     n_train: The number of data points to be valued.
+#     n_val: Validation size. Validation dataset is used to evalute utility function.
+#     n_test: Test size. Test dataset is used to evalute model performance.
+#     openml_path: path to openml datasets.
+#     '''
+#     if dataset == 'gaussian':
+#         print('-'*50)
+#         print('GAUSSIAN-R')
+#         print('-'*50)
+#         n, input_dim = 50000, 10
+#         X_raw = np.random.normal(size=(n,input_dim))
+#         beta = np.random.normal(size=(input_dim,1))
+#         error_raw = np.random.normal(size=(n,1))
+#         Y_raw = X_raw.dot(beta) + error_raw
+#         data, target = X_raw, Y_raw
+#     elif dataset == 'wave_energy':
+#         print('-'*50)
+#         print('wave_energy')
+#         print('-'*50)
+#         data_dict=pickle.load(open(openml_path+'/wave_energy_44975.pkl', 'rb'))
+#         data, target = data_dict['X_num'], data_dict['y']  
+#     elif dataset == 'lowbwt':
+#         print('-'*50)
+#         print('lowbwt')
+#         print('-'*50)
+#         data_dict=pickle.load(open(openml_path+'/BNG(lowbwt)_1193.pkl', 'rb'))
+#         data, target = data_dict['X_num'], data_dict['y'] 
+#     elif dataset == 'mv':
+#         print('-'*50)
+#         print('mv')
+#         print('-'*50)
+#         data_dict=pickle.load(open(openml_path+'/mv_344.pkl', 'rb'))
+#         data, target = data_dict['X_num'], data_dict['y']  
+#     elif dataset == 'Job_Profitability':
+#         print('-'*50)
+#         print('Job_Profitability')
+#         print('-'*50)
+#         data_dict=pickle.load(open(openml_path+'/Job_Profitability_44311.pkl', 'rb'))
+#         data, target = data_dict['X_num'], data_dict['y']  
+#     elif dataset == 'stock':
+#         print('-'*50)
+#         print('stock')
+#         print('-'*50)
+#         data_dict=pickle.load(open(openml_path+'/BNG(stock)_1200.pkl', 'rb'))
+#         data, target = data_dict['X_num'], data_dict['y']  
+#     elif dataset == 'echoMonths':
+#         print('-'*50)
+#         print('echoMonths')
+#         print('-'*50)
+#         data_dict=pickle.load(open(openml_path+'/BNG(echoMonths)_1199.pkl', 'rb'))
+#         data, target = data_dict['X_num'], data_dict['y']  
+#     else:
+#         assert False, f"Check {dataset}."
 
-    (X, y), (X_val, y_val), (X_test, y_test) = preprocess_and_split_dataset(data, target, n_data_to_be_valued, n_val, n_test, is_classification=False)
+#     (X, y), (X_val, y_val), (X_test, y_test) = preprocess_and_split_dataset(data, target, n_train, n_val, n_test, is_classification=False)
 
-    return (X, y), (X_val, y_val), (X_test, y_test)
+#     return (X, y), (X_val, y_val), (X_test, y_test)
 
 def load_classification_dataset(dataset,
-                                n_data_to_be_valued, 
+                                experiment,
+                                n_train, 
                                 n_val, 
                                 n_test, 
-                                input_dim=10,
+                                input_dim,
                                 clf_path='clf_path',
                                 openml_path='openml_path',
-                                masked_ratio=0.5,
-                                rho=0):
+                                mask_ratio=0.5,
+                                rho=0,
+                                base=3,
+                                error_row_rate=0.1,
+                                error_col_rate=0.1,
+                                error_mech='noise'
+                                ):
     '''
     This function loads classification datasets.
-    n_data_to_be_valued: The number of data points to be valued.
+    n_train: The number of data points to be valued.
     n_val: Validation size. Validation dataset is used to evalute utility function.
     n_test: Test size. Test dataset is used to evalute model performance.
     clf_path: path to classification datasets.
@@ -137,7 +151,7 @@ def load_classification_dataset(dataset,
         print('-'*50)
         print('GAUSSIAN-C')
         print('-'*50)
-        n, input_dim=max(100000, n_data_to_be_valued+n_val+n_test+1), input_dim
+        n, input_dim=max(100000, n_train+n_val+n_test+1), input_dim
         
         if rho != 0:
             U_cov = np.diag((1-rho)*np.ones(input_dim))+rho
@@ -145,10 +159,35 @@ def load_classification_dataset(dataset,
             data = np.random.multivariate_normal(U_mean, U_cov, n)
         else:
             data = np.random.normal(size=(n,input_dim))
-        # beta_true = np.array([2.0, 1.0, 0.0, 0.0, 0.0]).reshape(input_dim,1)
-        beta_true = np.random.normal(size=input_dim).reshape(input_dim,1)
-        beta_masked = np.random.choice(input_dim, int(input_dim*masked_ratio), replace=False)
-        beta_true[beta_masked] = 0.0
+    
+        
+        if experiment == 'noisy':
+            # no normalization
+            # beta
+            beta_true = np.random.normal(size=(input_dim,1))
+            # no mask
+        elif experiment == 'mask&rank':
+            # normalization
+            data_mean, data_std= np.mean(data, 0), np.std(data, 0)
+            data = (data - data_mean) / np.clip(data_std, 1e-12, None)
+            # beta
+            beta_true = np.zeros(input_dim)
+            pos = np.random.choice(input_dim, int(input_dim*0.5), replace=False)
+            neg = np.setdiff1d(np.arange(input_dim) , pos)
+            assert (np.union1d(pos,neg) == np.arange(input_dim)).all()
+            beta_true[pos] = np.random.normal(loc = base,size=len(pos))
+            beta_true[neg] = np.random.normal(loc = -base,size=len(neg))
+            beta_true = beta_true.reshape(input_dim,1)
+            # mask
+            beta_mask = np.random.choice(input_dim, int(input_dim*mask_ratio), replace=False)
+            beta_true[beta_mask] = 0.0 
+        elif experiment == 'error':
+            # normalization
+            data_mean, data_std= np.mean(data, 0), np.std(data, 0)
+            data = (data - data_mean) / np.clip(data_std, 1e-12, None)
+            # beta
+            beta_true = np.random.normal(loc = 1,scale = np.sqrt(0.1), size=(input_dim,1))
+            # no mask
         p_true = np.exp(data.dot(beta_true))/(1.+np.exp(data.dot(beta_true)))
         target = np.random.binomial(n=1, p=p_true).reshape(-1)
     elif dataset == 'pol':
@@ -199,12 +238,12 @@ def load_classification_dataset(dataset,
         print('-'*50)
         data_dict=pickle.load(open(openml_path+'/default-of-credit-card-clients_42477.pkl', 'rb'))
         data, target = data_dict['X_num'], data_dict['y'] 
-    elif dataset == 'covertype':
-        print('-'*50)
-        print('Covertype')
-        print('-'*50)
-        from sklearn.datasets import fetch_covtype
-        data, target=fetch_covtype(data_home=clf_path, return_X_y=True)
+    # elif dataset == 'covertype':
+    #     print('-'*50)
+    #     print('Covertype')
+    #     print('-'*50)
+    #     from sklearn.datasets import fetch_covtype
+    #     data, target=fetch_covtype(data_home=clf_path, return_X_y=True)
     elif dataset == 'nomao':
         print('-'*50)
         print('nomao')
@@ -225,15 +264,27 @@ def load_classification_dataset(dataset,
         data, target = data_dict['X_num'], data_dict['y']         
     else:
         assert False, f"Check {dataset}"
-
-    (X, y), (X_val, y_val), (X_test, y_test) = preprocess_and_split_dataset(data, target,  n_data_to_be_valued, n_val, n_test)   
+        
+    # note
+    if dataset != 'gaussian':
+        beta_true = None
+    (X, y), (X_val, y_val), (X_test, y_test), error_index, error_row_index, X_original = \
+        preprocess_and_split_dataset(data, beta_true, 
+                                     experiment, 
+                                     target,  n_train, n_val, n_test, 
+                                     error_row_rate=error_row_rate,
+                                     error_col_rate=error_col_rate,
+                                     error_mech=error_mech)   
     
     if dataset == 'gaussian':
-        return (X, y), (X_val, y_val), (X_test, y_test), beta_true
+        return (X, y), (X_val, y_val), (X_test, y_test), beta_true, error_index, error_row_index, X_original
     else:
-        return (X, y), (X_val, y_val), (X_test, y_test), None
+        return (X, y), (X_val, y_val), (X_test, y_test), None, None, None, None
   
-def preprocess_and_split_dataset(data, target, n_data_to_be_valued, n_val, n_test, is_classification=True):
+def preprocess_and_split_dataset(data, beta_true, experiment, target, n_train, n_val, n_test, is_classification=True, 
+                                 error_row_rate=0.1,
+                                 error_col_rate=0.1,
+                                 error_mech='noise'):
     if is_classification is True:
         # classification
         target = target.astype(np.int32)
@@ -247,23 +298,58 @@ def preprocess_and_split_dataset(data, target, n_data_to_be_valued, n_val, n_tes
 
     data_mean, data_std= np.mean(data, 0), np.std(data, 0)
     data = (data - data_mean) / np.clip(data_std, 1e-12, None)
-    n_total=n_data_to_be_valued + n_val + n_test
+    n_total=n_train + n_val + n_test
+    # print(data.mean(axis=0),data.std(axis=0))
 
     if len(data) >  n_total:
-        X=data[:n_data_to_be_valued]
-        y=target[:n_data_to_be_valued]
-        X_val=data[n_data_to_be_valued:(n_data_to_be_valued+n_val)]
-        y_val=target[n_data_to_be_valued:(n_data_to_be_valued+n_val)]
-        X_test=data[(n_data_to_be_valued+n_val):(n_data_to_be_valued+n_val+n_test)]
-        y_test=target[(n_data_to_be_valued+n_val):(n_data_to_be_valued+n_val+n_test)]
+        X=data[:n_train]
+        y=target[:n_train]
+        X_val=data[n_train:(n_train+n_val)]
+        y_val=target[n_train:(n_train+n_val)]
+        X_test=data[(n_train+n_val):(n_train+n_val+n_test)]
+        y_test=target[(n_train+n_val):(n_train+n_val+n_test)]
     else:
-        assert False, f"Original dataset is less than n_data_to_be_valued + n_val + n_test. {len(data)} vs {n_total}. Try again with a smaller number for validation or test."
-
+        assert False, f"Original dataset is less than n_train + n_val + n_test. {len(data)} vs {n_total}. Try again with a smaller number for validation or test."
+    
+    if experiment == 'error':
+        # observe data with measurement error (note this is only done for training data)
+        if error_mech == 'noise':
+            # error = np.random.normal(scale=1,size=X.shape)
+            error = t.rvs(df=1, size=X.shape)
+        elif error_mech == 'adv':
+            eta = 5
+            c = int(error_col_rate*X.shape[1])
+            inner_dot = X.dot(beta_true)
+            error = np.tile(-inner_dot / c - np.sign(y.reshape(-1,1) - 0.5) * eta / c,(1,X.shape[1]))
+            assert error.shape == X.shape
+        # by column
+        # error_indicator = np.random.binomial(n=1, p=error_rate, size=X.shape)
+    
+        # by row
+        error_indicator = np.zeros(X.shape, dtype=int)
+        error_row_index = np.sort(np.random.choice(X.shape[0], int(error_row_rate*X.shape[0]), replace=False))
+        for i in error_row_index:
+            # print(int(error_col_rate*X.shape[1]))
+            random_indices = np.random.choice(X.shape[1], int(error_col_rate*X.shape[1]), replace=False)
+            error_indicator[i, random_indices] = 1
+    
+        error_index = error_indicator
+        X_original = X.copy()
+        X += error*error_indicator
+        # X_mean, X_std= np.mean(X, 0), np.std(X, 0)
+        
+        # normalization again
+        # X = (X - X_mean) / np.clip(X_std, 1e-12, None)
+    else:
+        error_index = None
+        error_row_index = None
+        X_original = None
+        
     print(f'Train X: {X.shape}')
     print(f'Val X: {X_val.shape}') 
     print(f'Test X: {X_test.shape}') 
     print('-'*30)
     
-    return (X, y), (X_val, y_val), (X_test, y_test)
+    return (X, y), (X_val, y_val), (X_test, y_test), error_index, error_row_index, X_original
 
 

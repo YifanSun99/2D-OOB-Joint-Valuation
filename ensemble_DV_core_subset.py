@@ -33,6 +33,8 @@ from sklearn.utils.validation import (
 from sklearn.utils.validation import _num_samples
 from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor, RandomForestClassifier, ExtraTreesClassifier
 from sklearn.ensemble import GradientBoostingClassifier
+from scipy.stats import dirichlet
+
 
 def _get_n_samples_bootstrap(n_samples, max_samples):
     if max_samples is None:
@@ -64,6 +66,7 @@ def _parallel_build_trees(
     verbose=0,
     class_weight=None,
     n_samples_bootstrap=None,
+    subset_ratio=0.5
 ):
     """
     Private function used to fit a single tree in parallel."""
@@ -72,6 +75,13 @@ def _parallel_build_trees(
 
     if bootstrap:
         n_samples = X.shape[0]
+        n_features = X.shape[1]
+        if subset_ratio == 'varying':
+            # alpha = np.array([2,2,2,2,2,1,1,1,1])
+            # p = dirichlet.rvs(alpha,size=1)
+            # subset_ratio = np.random.choice([0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9],p=p.reshape(-1))
+            subset_ratio = np.random.choice([0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9])
+        n_features_used = max(round(subset_ratio*(n_features)),1)
         if sample_weight is None:
             curr_sample_weight = np.ones((n_samples,), dtype=np.float64)
         else:
@@ -89,14 +99,18 @@ def _parallel_build_trees(
                 curr_sample_weight *= compute_sample_weight("auto", y, indices=indices)
         elif class_weight == "balanced_subsample":
             curr_sample_weight *= compute_sample_weight("balanced", y, indices=indices)
+        
+        features_used = np.random.choice(n_features, n_features_used, replace=False)
+        features_used = np.sort(features_used)
+        features_bincount = np.zeros(n_features)
+        features_bincount[features_used] = 1
+        tree.fit(X[:,features_used], y, sample_weight=curr_sample_weight, check_input=False) # Note here
 
-        tree.fit(X, y, sample_weight=curr_sample_weight, check_input=False)
-
-        return (tree, curr_sample_weight)
+        return (tree, curr_sample_weight,features_bincount)
     else:
         tree.fit(X, y, sample_weight=sample_weight, check_input=False)
 
-        return (tree, None)
+        return (tree, None, None)
 
 def _generate_sample_indices(random_state, n_samples, n_samples_bootstrap):
     random_instance = check_random_state(random_state)
@@ -104,7 +118,7 @@ def _generate_sample_indices(random_state, n_samples, n_samples_bootstrap):
 
     return sample_indices
 
-class RandomForestClassifierDV_original(RandomForestClassifier):
+class RandomForestClassifierDV_subset(RandomForestClassifier):
     def __init__(
         self,
         n_estimators=100,
@@ -114,7 +128,7 @@ class RandomForestClassifierDV_original(RandomForestClassifier):
         min_samples_split=2,
         min_samples_leaf=1,
         min_weight_fraction_leaf=0.0,
-        max_features="sqrt",
+        max_features="sqrt",# Note here
         max_leaf_nodes=None,
         min_impurity_decrease=0.0,
         bootstrap=True,
@@ -147,7 +161,7 @@ class RandomForestClassifierDV_original(RandomForestClassifier):
             ccp_alpha = ccp_alpha,
             max_samples=max_samples)
     
-    def fit(self, X, y, sample_weight=None):
+    def fit(self, X, y, sample_weight=None, subset_ratio=0.5):
         # Validate or convert input data
         if issparse(y):
             raise ValueError("sparse multilabel-indicator for y is not supported.")
@@ -312,18 +326,21 @@ class RandomForestClassifierDV_original(RandomForestClassifier):
                     verbose=self.verbose,
                     class_weight=self.class_weight,
                     n_samples_bootstrap=n_samples_bootstrap,
+                    subset_ratio=subset_ratio
                 )
                 for i, t in enumerate(trees)
             )
 
-            trees=[trees_tmp for (trees_tmp, bincounts_tmp) in trees_all]
-            bincounts=[bincounts_tmp for (trees_tmp, bincounts_tmp) in trees_all]
-            
+            trees=[trees_tmp for (trees_tmp, bincounts_tmp, features_used_tmp) in trees_all]
+            bincounts=[bincounts_tmp for (trees_tmp, bincounts_tmp, features_used_tmp) in trees_all]
+            bincounts_features=[features_used_tmp for (trees_tmp, bincounts_tmp, features_used_tmp) in trees_all]
+            # Note here
             # Collect newly grown trees
             self.estimators_.extend(trees)
 
             # Create DV data
             self._ensemble_X=bincounts
+            self._ensemble_features = bincounts_features
 
         if self.oob_score:
             y_type = type_of_target(y)
@@ -379,17 +396,56 @@ class RandomForestClassifierDV_original(RandomForestClassifier):
         assert len(self._ensemble_X)!=0, 'Run evaluate_importance first. self._ensemble_X is not defined'
 
         oob_performance=[]
+        ensemble_features_index = [np.where(i != 0)[0] for i in self._ensemble_features]
         for i, weak_learner in enumerate(self.estimators_):
             oob_ind=np.where(self._ensemble_X[i] == 0)[0]
-            oob_acc=(weak_learner.predict(X[oob_ind])==y[oob_ind]).astype(float)
+            oob_acc=(weak_learner.predict(X[oob_ind][:,ensemble_features_index[i]])==y[oob_ind]).astype(float)
             oob_performance.append({oob_ind[ind]: j for ind, j in enumerate(oob_acc)})     
         df_oob=pd.DataFrame(oob_performance)[np.arange(len(X))]
 
         return np.mean(df_oob, axis=0)
-    
-  
 
-class RandomForestRegressorDV_original(RandomForestRegressor):
+    def evaluate_dfoob_accuracy(self, X, y):
+        import pandas as pd
+        assert len(self.estimators_)!=0, 'Run fit first. self.estimators_ is not defined'
+        assert len(self._ensemble_X)!=0, 'Run evaluate_importance first. self._ensemble_X is not defined'
+
+        inoob = {}
+        # outoob = {}
+        # dfoob = {}
+        n = X.shape[0]
+        d = X.shape[1]
+        
+        for i in range(n):
+            for j in range(d):
+                inoob[(i,j)] = [0,0]
+                # outoob[(i,j)] = [0,0]
+                # dfoob[(i,j)] = [0,0]
+                
+        in_features_index = [np.where(i == 1)[0] for i in self._ensemble_features]        
+        # out_features_index = [np.where(i == 0)[0] for i in self._ensemble_features]        
+        
+
+        for i, weak_learner in enumerate(self.estimators_):
+            oob_ind=np.where(self._ensemble_X[i] == 0)[0]
+            oob_acc=(weak_learner.predict(X[oob_ind][:,in_features_index[i]])==y[oob_ind]).astype(float)
+            
+            for ind, j in enumerate(oob_acc):
+                for feature_ind in in_features_index[i]:
+                    inoob[(oob_ind[ind],feature_ind)][0] += j
+                    inoob[(oob_ind[ind],feature_ind)][1] += 1
+                # for feature_ind in out_features_index[i]:
+                #     outoob[(oob_ind[ind],feature_ind)][0] += j
+                #     outoob[(oob_ind[ind],feature_ind)][1] += 1
+        for key in inoob:
+            inoob[key] = inoob[key][0]/inoob[key][1] if inoob[key][1]!=0 else 0
+        # for key in dfoob:
+        #     dfoob[key] = inoob[key] -(outoob[key][0]/outoob[key][1] if outoob[key][1]!=0 else 0)
+                
+            
+        return pd.Series(inoob)#,pd.Series(dfoob)
+
+class RandomForestRegressorDV_subset(RandomForestRegressor):
     def __init__(
         self,
         n_estimators=100,
