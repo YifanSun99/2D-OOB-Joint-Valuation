@@ -2,13 +2,12 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression, LinearRegression
 from sklearn.metrics import precision_recall_curve, auc, ndcg_score, f1_score
-from ensemble_DV_core_original import RandomForestClassifierDV_original, RandomForestRegressorDV_original
+from ensemble_DV_core_original import RandomForestClassifierDV_original
 
 
 from sklearn.cluster import KMeans
 from scipy.integrate import simpson
 from scipy.stats import spearmanr, rankdata, ttest_ind, norm, weightedtau
-import xgboost as xgb
 import tqdm
 
 # noisy (not included in the paper)
