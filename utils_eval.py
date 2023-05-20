@@ -11,6 +11,7 @@ from scipy.stats import spearmanr, rankdata, ttest_ind, norm, weightedtau
 import xgboost as xgb
 import tqdm
 
+# noisy (not included in the paper)
 def noisy_detection_experiment(value_dict, noisy_index):
     noisy_score_dict=dict()
     for key in value_dict.keys():
@@ -19,99 +20,6 @@ def noisy_detection_experiment(value_dict, noisy_index):
     noisy_dict={'Meta_Data': ['Recall', 'Kmeans_label'],
                 'Results': noisy_score_dict}
     return noisy_dict
-
-def mask_detection_experiment(value_dict, mask_index):
-    mask_score_dict=dict()
-    for key in value_dict.keys():
-        mask_score_dict[key]=noisy_detection_core(np.abs(value_dict[key]), mask_index)
-
-    mask_dict={'Meta_Data': ['Recall', 'Kmeans_label'],
-                'Results': mask_score_dict}
-    return mask_dict
-
-def kmeans_smaller_cluster_indices_row(matrix, error_row_index):
-    binary_matrix = np.zeros_like(matrix)
-    if isinstance(error_row_index,np.ndarray):
-        to_enumerate = error_row_index
-    else:
-        raise ValueError('You should input error_row_index')
-        # to_enumerate = range(matrix.shape[0])
-    for i in to_enumerate:
-        row = matrix[i, :]
-        kmeans = KMeans(n_clusters=2, random_state=0, n_init='auto').fit(row.reshape(-1, 1))
-        smaller_cluster_idx = np.where(kmeans.labels_ == np.argmin(kmeans.cluster_centers_))[0]
-        binary_matrix[i, smaller_cluster_idx] = 1
-    return binary_matrix
-
-def get_min_k_indices(matrix, k, error_row_index): 
-    binary_matrix = np.zeros_like(matrix)
-    if isinstance(error_row_index,np.ndarray):
-        to_enumerate = error_row_index
-    else:
-        raise ValueError('You should input error_row_index')
-        # to_enumerate = range(matrix.shape[0])
-    for i in to_enumerate:
-        row_data = matrix[i]
-        sorted_indices = np.argsort(row_data)
-        binary_matrix[i, sorted_indices[:k]] = 1
-    return binary_matrix
-
-def error_detection_experiment(value_dict, error_index, error_row_index):
-    error_score_dict=dict()
-    for key in value_dict.keys():
-        error_score_dict[key]=error_detection_core(value_dict[key], error_index, error_row_index, method='k_means')
-        error_score_dict[key].extend(error_detection_core(value_dict[key], error_index, error_row_index, method='min_k'))
-    error_dict={'Meta_Data': ['Kmeans_label','Kmeans_matrix','min_k_label','min_k_matrix'],
-                'Results': error_score_dict}
-    return error_dict
-    
-def error_detection_core(value, error_index, error_row_index, method='min_k'):
-    # error_rate = sum(error_index[0])/len(error_index[0])
-    if method == 'min_k':
-        prediction_row = get_min_k_indices(value, max(error_index.sum(axis=1)), error_row_index)
-    elif method == 'k_means':
-        prediction_row = kmeans_smaller_cluster_indices_row(value, error_row_index)
-    else:
-        raise NotImplementedError('Not implemented yet!')
-
-    ground_truth_flat = error_index.flatten()
-    prediction_row_flat = prediction_row.flatten()
-    
-    # using kmeans label
-    f1_kmeans_label_row = f1_score(ground_truth_flat, prediction_row_flat, average='binary')  # Use 'binary' averaging for binary classification
-    return [f1_kmeans_label_row, prediction_row]    
- 
-def rank_experiment(value_dict, beta_true):
-    rank_score_dict=dict()
-    for key in value_dict.keys():
-        rank_score_dict[key]=(corr_evaluation_core(value_dict[key], beta_true),
-                              # ndcg_evaluation_core(value_dict[key], beta_true),
-                              # weightedtau(np.abs(beta_true), np.abs(value_dict[key]))[0]
-                              )
-    rank_dict={'Meta_Data': ['Corr'
-                             # ,'NDCG'
-                             # ,'Tau'
-                             ],
-                'Results': rank_score_dict}
-    return rank_dict
-
-def ndcg_evaluation_core(value, beta_true):
-    return ndcg_score(np.abs(beta_true).reshape(-1), np.abs(value).reshape(-1))
-
-def rankcorr(attrA, attrB, k):
-    # rank features (accounting for ties)
-    # rankdata gives rank1 for smallest # --> we want rank1 for largest # (aka # with largest magnitude)
-    all_feat_ranksA = rankdata(-np.abs(attrA), method='ordinal')
-    all_feat_ranksB = rankdata(-np.abs(attrB), method='ordinal')
-
-    rho = (spearmanr(all_feat_ranksA[all_feat_ranksA <= k], all_feat_ranksB[all_feat_ranksA <= k])[0] + 
-                  spearmanr(all_feat_ranksA[all_feat_ranksB <= k], all_feat_ranksB[all_feat_ranksB <= k])[0])/2
-    return rho
-
-def corr_evaluation_core(value, beta_true):
-    attrA = np.abs(beta_true).reshape(-1)
-    attrB = np.abs(value).reshape(-1)
-    return rankcorr(attrA, attrB, k = (beta_true != 0).sum())
 
 def noisy_detection_core(value, noisy_index):
     # without kmeans algorithm (but requires prior knowledge of the number of noise labels)
@@ -144,6 +52,60 @@ def compute_f1_score_by_set(list_a, list_b):
     else:
         f1_score=0.
     return f1_score
+
+
+# error
+def kmeans_smaller_cluster_indices_row(matrix, error_row_index):
+    binary_matrix = np.zeros_like(matrix)
+    if isinstance(error_row_index,np.ndarray):
+        to_enumerate = error_row_index
+    else:
+        raise ValueError('You should input error_row_index')
+    for i in to_enumerate:
+        row = matrix[i, :]
+        kmeans = KMeans(n_clusters=2, random_state=0, n_init='auto').fit(row.reshape(-1, 1))
+        smaller_cluster_idx = np.where(kmeans.labels_ == np.argmin(kmeans.cluster_centers_))[0]
+        binary_matrix[i, smaller_cluster_idx] = 1
+    return binary_matrix
+
+
+def error_detection_experiment(df_value_dict, error_index, error_row_index,
+                               two_stage = True, data_value_dict = None):
+    error_score_dict=dict()
+    if not two_stage:
+        for key in df_value_dict.keys():
+            error_score_dict[key]=error_detection_core(df_value_dict[key], error_index, error_row_index, method='k_means')
+    else:
+        raise NotImplementedError('Not implemented yet!')
+    
+    #prepare random baseline
+    random_guess = np.zeros(error_index.shape)
+    for i in error_row_index:
+        random_guess[i] = np.random.binomial(1,0.5,error_index.shape[1])
+    
+    error_score_dict['random'] = [f1_by_row(error_index, random_guess, error_row_index)]
+    
+    error_dict={'Meta_Data': ['Kmeans_score'],
+                'Results': error_score_dict}
+    return error_dict
+    
+def error_detection_core(value, error_index, error_row_index, method='k_means'):
+    # error_rate = sum(error_index[0])/len(error_index[0])
+    if method == 'min_k':
+        raise NotImplementedError('Not implemented yet!')
+    elif method == 'k_means':
+        prediction = kmeans_smaller_cluster_indices_row(value, error_row_index)
+    else:
+        raise NotImplementedError('Not implemented yet!')
+    
+    # using kmeans label
+    score = f1_by_row(error_index, prediction, error_row_index)
+    return [score]    
+
+def f1_by_row(true, pred, row_index):
+    return np.mean([f1_score(true[ind], pred[ind], average='binary') for 
+                    ind in row_index])
+
     
 def point_removal_experiment(value_dict, X, y, X_test, y_test, problem='clf'):
     removal_ascending_dict=dict()
@@ -155,6 +117,7 @@ def point_removal_experiment(value_dict, X, y, X_test, y_test, problem='clf'):
 
 def point_removal_core(X, y, X_test, y_test, value_list, ascending=True, problem='clf'):
     n_sample=len(X)
+    assert n_sample == 200
     if value_list == 'Random':
         sorted_value_list=np.random.permutation(n_sample) 
     else:
@@ -165,14 +128,14 @@ def point_removal_core(X, y, X_test, y_test, value_list, ascending=True, problem
     n_period = min(n_sample//100, 5) # we add 1% at each time
     for percentile in tqdm.tqdm(range(0, n_sample//5, n_period)):
         '''
-        We repeatedly remove 5% of entire data points at each step.
+        We repeatedly remove a few of entire data points at each step.
         The data points whose value belongs to the lowest group are removed first.
         The larger, the better
         '''
         sorted_value_list_tmp=sorted_value_list[percentile:]
         if problem == 'clf':
             try:
-                clf=RandomForestClassifierDV_original(n_estimators=1000, n_jobs=-1)
+                clf=RandomForestClassifierDV_original(n_estimators=2000, n_jobs=-1)
                 clf.fit(X[sorted_value_list_tmp], y[sorted_value_list_tmp])
                 model_score=clf.score(X_test, y_test)
             except:
@@ -180,7 +143,7 @@ def point_removal_core(X, y, X_test, y_test, value_list, ascending=True, problem
                 model_score=np.mean(np.mean(y[sorted_value_list_tmp])==y_test)
         else:
             try:
-                model=RandomForestRegressorDV_original(n_estimators=1000, n_jobs=-1) 
+                model=RandomForestRegressorDV_original(n_estimators=2000, n_jobs=-1) 
                 model.fit(X[sorted_value_list_tmp], y[sorted_value_list_tmp])
                 model_score=model.score(X_test, y_test)
             except:
@@ -195,7 +158,7 @@ def point_removal_core(X, y, X_test, y_test, value_list, ascending=True, problem
 def feature_removal_experiment(value_dict, X, y, X_test, y_test, random=True):
     removal_dict = dict()
     for key in value_dict.keys():
-        removal_dict[key]=feature_removal_core(X, y, X_test, y_test, value_dict[key])
+        removal_dict[key]=feature_removal_core(X, y, X_test, y_test, np.abs(value_dict[key]))
     if random:
         random_array=feature_removal_core(X, y, X_test, y_test, 'Random')
         removal_dict['Random']=random_array
@@ -211,36 +174,13 @@ def feature_removal_core(X, y, X_test, y_test, value_list):
     accuracy_list=[]
     for n_remove in tqdm.tqdm(range(1, d_sample)):
         sorted_value_list_tmp=sorted_value_list[n_remove:]
-        clf=RandomForestClassifierDV_original(n_estimators=1000, n_jobs=-1)
+        clf=RandomForestClassifierDV_original(n_estimators=2000, n_jobs=-1)
         clf.fit(X[:,sorted_value_list_tmp], y)
         model_score=clf.score(X_test[:,sorted_value_list_tmp], y_test)
 
         accuracy_list.append(model_score)
         
     return accuracy_list,simpson(accuracy_list, dx = 1),simpson(accuracy_list[:max(5,int(len(accuracy_list)//5))], dx = 1)
-
-
-
-def feature_loo_experiment(value_dict, X, y, X_test, y_test, random=True):
-    loo_dict = dict()
-    d_sample=X.shape[1]
-    loo_score = np.zeros(d_sample)
-    for d in tqdm.tqdm(range(d_sample)):
-        tmp_scores = []
-        for _ in range(3):
-            clf=RandomForestClassifierDV_original(n_estimators=1000, n_jobs=-1)
-            clf.fit(np.delete(X, d, axis=1), y)
-            tmp_scores.append(clf.score(np.delete(X_test, d, axis=1), y_test))
-        loo_score[d]=np.mean(tmp_scores)
-    rank_loo = rankdata(loo_score, method='ordinal')
-    for key in value_dict.keys():
-        rank_value = rankdata(-value_dict[key], method='ordinal')
-        loo_dict[key]=spearmanr(rank_loo,rank_value)[0]
-    return {'loo_Corr':loo_dict,'loo_score':loo_score} 
-
-
-
-
 
 
 

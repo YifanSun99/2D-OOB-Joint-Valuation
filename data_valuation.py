@@ -22,22 +22,6 @@ import utils_eval
 import warnings
 warnings.filterwarnings("ignore")
 
-def mape(y_true, y_pred):
-    return np.mean(np.abs((y_true - y_pred) / y_true)) * 100
-def rf_score_binary_clf_each_tree(model, X, y):
-    B = model.n_estimators
-    trees = model.estimators_
-    ensemble_features_index = [np.where(i != 0)[0] for i in model._ensemble_features]
-    
-    accs = [metrics.accuracy_score(y,trees[b].
-                                   predict(X[:,ensemble_features_index[b]])) for b in range(B)]
-    return np.mean(accs)
-
-def get_values(d,dim):
-    values = []
-    for i in range(dim):
-        values.append(d.get("f%d"%i,0))
-    return values
 
 class DataValuation(object):
     def __init__(self, X, y, X_val, y_val, 
@@ -92,46 +76,20 @@ class DataValuation(object):
         self.error_detect_dict=defaultdict(list)
         self.point_removal_dict=defaultdict(list)
         self.loo_dict=defaultdict(list)
-
-
-    # def evalute_subset_models(self, X_test, y_test, subset_ratio_list = None):
-    #     accs_rf_subset = []
-    #     if self.problem == 'clf':
-    #         if subset_ratio_list == None:
-    #             subset_ratio_list = [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9]
-    #         for subset_ratio in subset_ratio_list:
-    #             model_rf_subset = RandomForestClassifierDV_subset(n_estimators=1000, n_jobs=-1)
-    #             model_rf_subset.fit(self.X, self.y, subset_ratio=subset_ratio)
-    #             acc_rf_subset = rf_score_binary_clf_each_tree(model_rf_subset, X_test, y_test)
-    #             accs_rf_subset.append(acc_rf_subset)
-    #         model_rf_full = RandomForestClassifierDV_subset(n_estimators=1000, n_jobs=-1)
-    #         model_rf_full.fit(self.X, self.y, subset_ratio=1.0)
-    #         acc_rf_full = rf_score_binary_clf_each_tree(model_rf_full,X_test, y_test)
             
-    #         # print(f'RF_subset {acc_rf_subset:.3f}')
-    #         print(f'RF_original {acc_rf_full:.3f}')
-    #         gaps = []
-    #         for acc_rf_subset in accs_rf_subset:
-    #             gaps.append(acc_rf_full - acc_rf_subset)            
-    #             # print(f'gap_subset {acc_rf_full - acc_rf_subset:.3f}')
-    #         self.rf_evaluation_dict={gaps}
-    #     else:
-    #         raise NotImplementedError('Not implemented yet!')
-            
-    def compute_data_shap(self, loo_run=True, betashap_run=True):
+    def compute_data_shap(self, loo_run=False, betashap_run=False):
         '''
-        This function computes regular Data-Valuation methods
+        This function computes regular data valuation methods
         '''
         self.data_shap_engine=DataApproach(X=self.X, y=self.y, 
                                             X_val=self.X_val, y_val=self.y_val, 
                                             problem=self.problem, model_family=self.model_family)
-        self.data_shap_engine.run(loo_run=False, betashap_run=False)
+        self.data_shap_engine.run(loo_run=loo_run, betashap_run=betashap_run)
         self._dict_update(self.data_shap_engine)
 
-    def compute_feature_shap(self, data_oob_run=True, df_oob_run=True, subset_ratio_list=[0.5]):
+    def compute_feature_shap(self, data_oob_run=True, df_oob_run=True, subset_ratio_list=['varying']):
         '''
-        We regard the data valuation problem as feature attribution problem
-        This function computes feature attribution methods
+        This function computes feature attribution and joint valuation methods
         '''
         self.feature_shap_engine=FeatureApproach(X=self.X, y=self.y, 
                                                  problem=self.problem, model_family=self.model_family,
@@ -155,7 +113,7 @@ class DataValuation(object):
         print("Start: SHAP computation")
         time_init=time()
         if SHAP_size == None:
-            explainer = shap.TreeExplainer(self.rf_model_original)#, sample_X, feature_perturbation = 'interventional')
+            explainer = shap.TreeExplainer(self.rf_model_original)
             shap_values = explainer(self.X)
         else:
             sample_X = self.X[np.random.choice(self.X.shape[0], size=SHAP_size, replace=False), :]
@@ -180,96 +138,35 @@ class DataValuation(object):
             
         if 'point_removal' in experiments:
             time_init=time()
-            self.point_removal_dict=utils_eval.point_removal_experiment(self.data_value_dict,
-                                                                   self.X, self.y,
-                                                                   X_test, y_test,
-                                                                   problem=self.problem)
+            noisy_rate = len(noisy_index)/self.X.shape[0]
+            idx_sub = np.sort(np.concatenate((np.random.choice(noisy_index,int(200*noisy_rate),replace=False),
+                np.random.choice(np.setdiff1d(np.arange(self.X.shape[0]),noisy_index),
+                                int(200*(1-noisy_rate)),replace=False))))
+            X_sub = self.X[idx_sub]
+            y_sub = self.y[idx_sub]
+            data_value_dict_sub = {}
+            for key,value in self.data_value_dict.items():
+                data_value_dict_sub[key] = value[idx_sub]
+            self.point_removal_dict=utils_eval.point_removal_experiment(data_value_dict_sub,
+                                                                    X_sub, y_sub,
+                                                                    X_test, y_test,
+                                                                    problem=self.problem)
             self.time_dict['Eval:removal']=time()-time_init
-            
-        if 'mask' in experiments:
-            time_init=time()
-            mask_index = np.where(beta_true == 0)[0]
-            self.mask_detect_dict=utils_eval.mask_detection_experiment(self.feature_value_dict, mask_index)
-            self.time_dict['Eval:mask']=time()-time_init
-        
-        if 'rank' in experiments:
-            time_init=time()
-            self.rank_dict=utils_eval.rank_experiment(self.feature_value_dict, beta_true)
-            self.time_dict['Eval:rank']=time()-time_init
 
         if 'feature_removal' in experiments:
             time_init=time()
             self.feature_removal_dict=utils_eval.feature_removal_experiment(self.feature_value_dict, self.X, self.y, self.X_test, self.y_test)
             self.time_dict['Eval:feature_removal']=time()-time_init
 
-        # if 'loo' in experiments:
-        #     time_init=time()
-        #     self.loo_dict=utils_eval.feature_loo_experiment(self.feature_value_dict, self.X, self.y, self.X_test, self.y_test)
-        #     self.time_dict['Eval:loo']=time()-time_init
-
         if 'error' in experiments:
             time_init=time()
-            self.error_detect_dict=utils_eval.error_detection_experiment(self.df_value_dict, error_index, error_row_index)
+            self.error_detect_dict=utils_eval.error_detection_experiment(self.df_value_dict, error_index, error_row_index,
+                                                                         two_stage = False, data_value_dict = self.data_value_dict)
             self.time_dict['Eval:error']=time()-time_init
         
-    
-    def prepare_learn_oob(self):
-        print("Start: Learn-OOB computation")
-        time_init=time()
-        X_y = np.concatenate((self.X,self.y.reshape(-1,1)), axis=1)
-        if 'Data-OOB' not in self.data_value_dict:
-            raise ValueError("You should fit Data-OOB first!")
-        oob = self.data_value_dict['Data-OOB']
-        
-        X_y_train, X_y_val, oob_train, oob_val = train_test_split(X_y, oob, test_size=int(0.1 * X_y.shape[0]), random_state=0)
-    
-        dtrain = xgb.DMatrix(X_y_train, label=oob_train)
-        dval = xgb.DMatrix(X_y_val, label=oob_val)
-        
-        params = {
-            'objective': 'reg:squarederror',
-            'eval_metric': 'rmse',
-            'learning_rate': 0.01,
-            'random_state':0
-        }
-    
-        model = xgb.train(
-            params, dtrain, num_boost_round=1000, 
-            evals=[(dtrain, 'train'), (dval, 'eval')], 
-            early_stopping_rounds=10, 
-            verbose_eval=0
-        )
-        y_pred = model.predict(dval)
-        score_mse = mean_squared_error(oob_val, y_pred)
-        score_mape = mape(oob_val, y_pred)
-        
-        explainer = shap.TreeExplainer(model)
-        shap_values = explainer(X_y)
-        local_importance = np.abs(shap_values.values)
-        global_importance = local_importance.mean(axis=0)
-                
-        self.feature_value_dict['Learn-OOB'] = global_importance[:-1]
-        self.df_value_dict['Learn-OOB'] = local_importance[:,:-1]
-        self.time_dict['Learn-OOB']=time()-time_init
-        
-        
-        # weight_importance = np.array(get_values(model.get_score(importance_type='weight'),X_y_train.shape[1]))
-        # gain_importance = np.array(get_values(model.get_score(importance_type='gain'),X_y_train.shape[1]))
-        
-        print("Done: Learn-OOB computation")
-        
-        return {'X_y_data':(X_y_train,X_y_val),
-                'oob_data':(oob_train,oob_val),
-                'score_mse':score_mse,
-                'score_mape':score_mape,
-                'learn_feature_importance':global_importance[:-1],
-                # 'weight_importance':weight_importance[:-1],
-                # 'gain_importance':gain_importance[:-1],
-               }
-    
 
-        
-    def save_results(self, runpath, dataset, dargs_ind, noisy_index, beta_true):
+    def save_results(self, runpath, dataset, dargs_ind, noisy_index, beta_true,
+                     error_index=None,error_row_index=None):
 
         print('-'*50)
         print('Save results')
@@ -290,7 +187,9 @@ class DataValuation(object):
                      'input_dim':self.X.shape[1],
                      'model_name':self.model_name,
                      'noisy_index': noisy_index,
-                     'beta_true': beta_true
+                     'beta_true': beta_true,
+                     'error_row_index':error_row_index,
+                     'error_index':error_index
                      }
         with open(runpath+f'/run_id{self.run_id}_{dargs_ind}.pkl', 'wb') as handle:
             pickle.dump(result_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)

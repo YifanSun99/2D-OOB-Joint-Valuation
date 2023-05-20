@@ -46,7 +46,7 @@ class FeatureApproach(object):
         self.df_value_dict=defaultdict(list)
         self.time_dict=defaultdict(list) 
 
-    def run(self,data_oob_run=True, df_oob_run=True, subset_ratio_list=[0.5]):
+    def run(self,data_oob_run=True, df_oob_run=True, subset_ratio_list=['varying']):
         if data_oob_run:
             self._calculate_proposed_data_oob()
         if df_oob_run:
@@ -113,7 +113,7 @@ class FeatureApproach(object):
         self.time_dict['Data-OOB']=time()-time_init
         print(f'Done: Data-OOB computation')
 
-    def _calculate_proposed_df_oob(self, subset_ratio_list=[0.5]):
+    def _calculate_proposed_df_oob(self, subset_ratio_list=['varying']):
         print(f'Start: DF-OOB computation')
         # fit a random forest model
         # for subset_ratio in [0.9,0.8,0.7,0.6,0.5,0.4,0.3,0.2,0.1]:
@@ -132,14 +132,14 @@ class FeatureApproach(object):
             df_oob_data, df_oob_feature = np.mean(df_oob,axis=1), np.mean(df_oob,axis=0)
             
             if subset_ratio == 'varying':
-                self.df_value_dict['Df-OOB-%s'%subset_ratio]=df_oob_series.values.reshape(self.X.shape[0],self.X.shape[1])
-                self.data_value_dict['Df-OOB-data-%s'%subset_ratio]=df_oob_data
-                self.feature_value_dict['Df-OOB-feature-%s'%subset_ratio]=df_oob_feature
+                self.df_value_dict['Df-OOB-%s'%subset_ratio]=df_oob
+                self.data_value_dict['Df-OOB-%s'%subset_ratio]=df_oob_data
+                self.feature_value_dict['Df-OOB-%s'%subset_ratio]=df_oob_feature
                 self.time_dict['Df-OOB-%s'%subset_ratio]=time()-time_init
             else:                
-                self.df_value_dict['Df-OOB-%.1f'%subset_ratio]=df_oob_series.values.reshape(self.X.shape[0],self.X.shape[1])
-                self.data_value_dict['Df-OOB-data-%.1f'%subset_ratio]=df_oob_data
-                self.feature_value_dict['Df-OOB-feature-%.1f'%subset_ratio]=df_oob_feature
+                self.df_value_dict['Df-OOB-%.1f'%subset_ratio]=df_oob
+                self.data_value_dict['Df-OOB-%.1f'%subset_ratio]=df_oob_data
+                self.feature_value_dict['Df-OOB-%.1f'%subset_ratio]=df_oob_feature
                 self.time_dict['Df-OOB-%.1f'%subset_ratio]=time()-time_init
 
             

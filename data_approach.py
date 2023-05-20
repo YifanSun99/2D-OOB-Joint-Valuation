@@ -7,7 +7,7 @@ class DataApproach(object):
                  X, y, 
                  X_val, y_val, 
                  problem, model_family,
-                 GR_threshold=1.05, max_iters=50):
+                 GR_threshold=1.1, max_iters=50):
         """
         Args:
             (X,y): (inputs,outputs) to be valued.
