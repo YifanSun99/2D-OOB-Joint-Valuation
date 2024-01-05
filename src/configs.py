@@ -22,9 +22,9 @@ def generate_config(expno_name,
     exp['openml_clf_path'] = '/burg/stats/users/ys3600/test_ginsburg/openml_dataset'
     exp['openml_reg_path'] = '/burg/stats/users/ys3600/test_ginsburg/openml_dataset'
     # exp['out_path'] = '/burg/stats/users/ys3600/test_ginsburg/spreadout/%s'%(experiment) 
-    exp['out_path'] = '/burg/stats/users/ys3600/test_ginsburg/two_stage/%s'%(experiment) 
-    if not os.path.exists(exp['out_path']):
-        os.makedirs(exp['out_path'])
+    exp['out_path'] = '/burg/stats/users/ys3600/test_ginsburg/%s_0.25_0.75'%(experiment) 
+    # if not os.path.exists(exp['out_path']):
+    #     os.makedirs(exp['out_path'])
     exp['slurm'] = {'account':'stats','time':'24:00:00','ntasks-per-node':'4','cpus-per-task':'1','mem-per-cpu':'10G','nodes':1,'exclude':'g[189-194]'}
 
     # Run configuration

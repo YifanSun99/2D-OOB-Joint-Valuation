@@ -1,7 +1,7 @@
 from time import time
 import numpy as np
 import pickle
-import shap
+# import shap
 from collections import defaultdict
 from sklearn import metrics
 
@@ -136,6 +136,13 @@ class DataValuation(object):
         self.df_value_dict['2d-knn'] = knn_2d_values
         self.time_dict['2d-knn']=time()-time_init
 
+        time_init=time()
+        random_values = np.random.rand(*self.X.shape)
+        self.data_value_dict['random'] = random_values.mean(axis=1)
+        self.feature_value_dict['random'] = random_values.mean(axis=0)
+        self.df_value_dict['random'] = random_values
+        self.time_dict['random'] = time() - time_init       
+
         
         # time_init=time()
         # mc_2d_values = mc_2d.mcsv2d(self.X, self.y, self.X_val, self.y_val)
@@ -145,6 +152,51 @@ class DataValuation(object):
         # self.time_dict['2d-mc']=time()-time_init
 
         print("Done: 2d-SHAP computation")
+    
+    def prepare_data_valuation_baseline(self):
+        from opendataval.dataloader import DataFetcher
+        from sklearn import tree
+        from opendataval.dataval import (
+            # BetaShapley,
+            DataBanzhaf,
+            DataShapley,
+            KNNShapley,
+            LavaEvaluator,
+            # LeaveOneOut,
+            RandomEvaluator,
+        )
+        from opendataval.model import ClassifierSkLearnWrapper
+        def one_hot_encode(y, num_classes=2):
+            return np.eye(num_classes)[y]
+        
+        pred_model = ClassifierSkLearnWrapper(tree.DecisionTreeClassifier, 2)
+        # pred_model = LogisticRegression(self.X.shape[1], 1)
+        fetcher = DataFetcher.from_data_splits(self.X, one_hot_encode(self.y), self.X_val, one_hot_encode(self.y_val), self.X_test, one_hot_encode(self.y_test), one_hot=True)
+
+        time_init=time()
+        lava = LavaEvaluator().train(fetcher=fetcher)
+        self.data_value_dict['lava'] = lava.data_values
+        self.time_dict['lava']=time()-time_init        
+
+        time_init=time()
+        datashapley = DataShapley(gr_threshold=1.05, max_mc_epochs=300).train(fetcher=fetcher, pred_model=pred_model)
+        self.data_value_dict['datashapley'] = datashapley.data_values
+        self.time_dict['datashapley']=time()-time_init       
+
+        time_init=time()
+        knnshapley = KNNShapley(k_neighbors=0.1*len(self.X)).train(fetcher=fetcher)
+        self.data_value_dict['knnshapley'] = knnshapley.data_values
+        self.time_dict['knnshapley']=time()-time_init 
+
+        time_init=time()
+        rand = RandomEvaluator().train(fetcher=fetcher)
+        self.data_value_dict['rand'] = rand.data_values
+        self.time_dict['rand']=time()-time_init 
+
+        time_init=time()
+        dataBanzhaf = DataBanzhaf(num_models=3000).train(fetcher=fetcher, pred_model=pred_model)
+        self.data_value_dict['DataBanzhaf'] = dataBanzhaf.data_values
+        self.time_dict['DataBanzhaf']=time()-time_init 
 
     def evaluate_data_values(self, noisy_index, beta_true, error_index, error_row_index, X_test, y_test,
                              experiments, outlier_inds=None):# outlier_inds_0=None, outlier_inds_1=None):

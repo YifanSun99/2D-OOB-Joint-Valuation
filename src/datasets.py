@@ -36,14 +36,14 @@ def add_outliers(X, y, outlier_addition = 'two_stage'):
     if outlier_addition == 'spreadout':
         print("spreadout")
         total_cells = X.shape[0] * X.shape[1]
-        amt = int(0.01 * total_cells)
+        amt = int(0.04 * total_cells)
         outlier_inds = np.sort(np.random.choice(range(total_cells), amt, replace=False))
     elif outlier_addition == 'two_stage':
         print("two_stage")
-        selected_rows = np.random.choice(X.shape[0], size=int(0.1*X.shape[0]), replace=False)
+        selected_rows = np.random.choice(X.shape[0], size=int(0.2*X.shape[0]), replace=False)
         outlier_inds_list = []
         for row in selected_rows:
-            selected_cols = np.random.choice(X.shape[1], size=max(int(0.1*X.shape[1]),1), replace=False)
+            selected_cols = np.random.choice(X.shape[1], size=max(int(0.2*X.shape[1]),1), replace=False)
             for col in selected_cols:
                 flattened_index = row * X.shape[1] + col
                 outlier_inds_list.append(flattened_index)
@@ -64,10 +64,14 @@ def add_outliers(X, y, outlier_addition = 'two_stage'):
         feat_mean, feat_std, likeli = all_feat_stats[cur_label]
         norm_val = 1
         feat = 0
+
+        while norm_val > likeli:
+            feat = np.random.normal(0,1)
+            norm_val = normpdf(feat, feat_mean[col], feat_std[col])
         
-        rnd_sign = int(np.random.normal(0,1) > 0)
-        
-        X_with_outliers[row, col] = feat_mean[col] + rnd_sign * 3 * feat_std[col]
+        # rnd_sign = int(np.random.normal(0,1) > 0)
+        # X_with_outliers[row, col] = feat_mean[col] + rnd_sign * 2.715 * feat_std[col]
+        X_with_outliers[row, col] = feat
         outlier_mask[row, col] = 1
     
     return X_with_outliers, outlier_mask, np.array(list(set(outlier_row_index)))

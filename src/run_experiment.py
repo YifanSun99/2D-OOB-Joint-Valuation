@@ -64,7 +64,8 @@ def run_experiment_core(config):
         #     outlier_inds_1=None
         if experiment in ['noisy','normal']:
             data_valuation_engine.compute_data_shap()
-        data_valuation_engine.compute_feature_shap(subset_ratio_list=[0.5])
+            data_valuation_engine.prepare_data_valuation_baseline()
+        data_valuation_engine.compute_feature_shap(subset_ratio_list=[0.25,0.75])
         if experiment in ['noisy','normal','error','outlier']:
             data_valuation_engine.prepare_baseline(SHAP_size=None)
         data_valuation_engine.evaluate_data_values(noisy_index, beta_true, error_index, error_row_index, X_test, y_test, 

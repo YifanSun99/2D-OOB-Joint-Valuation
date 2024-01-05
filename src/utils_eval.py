@@ -180,17 +180,16 @@ def point_removal_experiment(value_dict, X, y, X_test, y_test, problem='clf'):
     removal_ascending_dict=dict()
     for key in value_dict.keys():
         removal_ascending_dict[key]=point_removal_core(X, y, X_test, y_test, value_dict[key], ascending=True, problem=problem)
-    random_array=point_removal_core(X, y, X_test, y_test, 'random', problem=problem)
-    removal_ascending_dict['random']=random_array
+    # random_array=point_removal_core(X, y, X_test, y_test, 'random', problem=problem)
     return {'removal':removal_ascending_dict}
 
 def point_removal_core(X, y, X_test, y_test, value_list, ascending=True, problem='clf'):
     n_sample=len(X)
-    if value_list == 'random':
-        sorted_value_list=np.random.permutation(n_sample) 
-    else:
-        if ascending is True:
-            sorted_value_list=np.argsort(value_list) # ascending order. low to high.
+    # if value_list == 'random':
+    #     sorted_value_list=np.random.permutation(n_sample) 
+    # else:
+    if ascending is True:
+        sorted_value_list=np.argsort(value_list) # ascending order. low to high.
     
     accuracy_list=[]
     n_period = min(n_sample//100, 5) # we add 1% at each time
@@ -281,18 +280,18 @@ def cell_removal_experiment(value_dict, X, y, X_test, y_test, random=True):
     removal_dict = dict()
     for key in value_dict.keys():
         if "treeshap" not in key:
-            removal_dict[key+"_asc"]=cell_removal_core(X, y, X_test, y_test, value_dict[key],ascending=True)
-            removal_dict[key+"_des"]=cell_removal_core(X, y, X_test, y_test, value_dict[key],ascending=False)
+            removal_dict[key+"_asc"]=cell_removal_core(X, y, X_test, y_test, value_list=value_dict[key],ascending=True, random=False)
+            removal_dict[key+"_des"]=cell_removal_core(X, y, X_test, y_test, value_list=value_dict[key],ascending=False, random=False)
     if random:
-        random_array=cell_removal_core(X, y, X_test, y_test, 'random')
+        random_array=cell_removal_core(X, y, X_test, y_test, random=True)
         removal_dict['random']=random_array
     return {'removal':removal_dict} 
 
-def cell_removal_core(X, y, X_test, y_test, value_list, ascending=False, problem='clf'):
+def cell_removal_core(X, y, X_test, y_test, value_list=None, ascending=False, problem='clf', random=False):
     n_sample, n_feature = X.shape
     accuracy_list = []
 
-    if value_list == 'random':
+    if random:
         sorted_value_list = np.random.permutation(n_sample*n_feature) 
     else:
         if ascending:
