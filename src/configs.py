@@ -17,15 +17,13 @@ def generate_config(expno_name,
     exp = dict()
     exp['expno']=expno_name
     exp['n_runs']=n_runs
-    exp['script_path'] = '/burg/stats/users/ys3600/test_ginsburg/src/launcher.py'
-    exp['clf_path'] = '/burg/stats/users/ys3600/test_ginsburg'
-    exp['openml_clf_path'] = '/burg/stats/users/ys3600/test_ginsburg/openml_dataset'
-    exp['openml_reg_path'] = '/burg/stats/users/ys3600/test_ginsburg/openml_dataset'
-    # exp['out_path'] = '/burg/stats/users/ys3600/test_ginsburg/spreadout/%s'%(experiment) 
-    exp['out_path'] = '/burg/stats/users/ys3600/test_ginsburg/%s_0.25_0.75'%(experiment) 
+    exp['script_path'] = '...'
+    exp['clf_path'] = '...'
+    exp['openml_clf_path'] = '...'
+    exp['openml_reg_path'] = '...'
+    exp['out_path'] = '...'
     # if not os.path.exists(exp['out_path']):
     #     os.makedirs(exp['out_path'])
-    exp['slurm'] = {'account':'stats','time':'24:00:00','ntasks-per-node':'4','cpus-per-task':'1','mem-per-cpu':'10G','nodes':1,'exclude':'g[189-194]'}
 
     # Run configuration
     run_temp = dict()
@@ -41,7 +39,7 @@ def generate_config(expno_name,
                 dargs_list=[]
                 is_noisy = 0.1 if experiment == 'noisy' else None
                 for n_train in [1000]:
-                    for n_trees in [3000]:
+                    for n_trees in [1000]:
                         dargs_list.append({'experiment':experiment,
                                            'n_train':n_train, 
                                             'n_val':(n_train//10), 
@@ -70,14 +68,6 @@ def generate_config(expno_name,
                 is_noisy = 0.1
                 error_row_rate, base = None, None
                 mask_ratio_list, error_mech_list, error_col_rate_list = [None], [None], [None]
- 
-            elif experiment == 'error':
-                raise NotImplementedError('Check!!!')
-                error_row_rate = 0.1
-                error_col_rate_list = [0.1]
-                error_mech_list = ['adv']
-                mask_ratio_list, is_noisy, base = [None], None, None
-            
             elif experiment == 'normal' or experiment == 'outlier':
                 error_col_rate_list, error_mech_list, mask_ratio_list, is_noisy, base, \
                     error_row_rate = [None], [None], [None], None, None, None
@@ -87,7 +77,7 @@ def generate_config(expno_name,
             for n_train in [1000]:
                 for input_dim in [20, 100]:
                     for rho in [0, 0.2, 0.6]:
-                        for n_trees in [3000]:
+                        for n_trees in [1000]:
                             for mask_ratio in mask_ratio_list:
                                 for error_mech in error_mech_list:
                                     for error_col_rate in error_col_rate_list:
@@ -105,9 +95,7 @@ def generate_config(expno_name,
                                                             'error_col_rate':error_col_rate,
                                                             'error_mech':error_mech,
                                                             'model_family':model_family,
-                                                            'run_id':run_id,                                                    
-                                                            # 'clf_path':exp['clf_path'],# Note here
-                                                            # 'openml_path':exp['openml_path'],                                                    
+                                                            'run_id':run_id,                                                                                             
                                                             })
             run['dargs_list'] = dargs_list
             runs.append(run)
@@ -117,11 +105,6 @@ def generate_config(expno_name,
 '''
 Classification
 '''
-
-# def config000CR(experiment = 'error'):
-#     exp, runs=generate_config(expno_name='000CR', problem='clf', dataset='gaussian', n_runs=30,
-#                               experiment=experiment)
-#     return exp, runs  
 
 def config001CR(experiment = 'normal'):
     exp, runs=generate_config(expno_name='001CR', problem='clf', dataset='pol',experiment=experiment)

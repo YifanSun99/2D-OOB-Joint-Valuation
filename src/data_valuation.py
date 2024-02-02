@@ -1,7 +1,8 @@
 from time import time
 import numpy as np
 import pickle
-# import shap
+import shap
+import xgboost as xgb
 from collections import defaultdict
 from sklearn import metrics
 
@@ -72,6 +73,7 @@ class DataValuation(object):
         self.rank_dict=defaultdict(list)
         self.feature_removal_dict=defaultdict(list)
         self.cell_removal_dict=defaultdict(list)
+        self.cell_fixation_dict=defaultdict(list)
         self.error_detect_dict=defaultdict(list)
         self.outlier_detect_dict=defaultdict(list)
         self.point_removal_dict=defaultdict(list)
@@ -109,26 +111,6 @@ class DataValuation(object):
         self.time_dict.update(engine.time_dict)
         
     def prepare_baseline(self, SHAP_size=1000):
-        # # base method: treeshap
-        # print("Start: TreeSHAP computation")
-        # time_init=time()
-        # if SHAP_size == None:
-        #     explainer = shap.TreeExplainer(self.rf_model_original)
-        #     shap_values = explainer(self.X)
-        # else:
-        #     sample_X = self.X[np.random.choice(self.X.shape[0], size=SHAP_size, replace=False), :]
-        #     explainer = shap.TreeExplainer(self.rf_model_original, feature_perturbation = 'interventional')
-        #     shap_values = explainer(sample_X)
-        # local_importance = np.abs(shap_values.values)[:,:, 0]
-        # global_importance = local_importance.mean(axis=0)
-        # self.feature_value_dict['treeshap'] = global_importance
-        # self.df_value_dict['treeshap'] = local_importance
-        # self.time_dict['treeshap']=time()-time_init
-        # print("Done: TreeSHAP computation")
-        # 2d-SHAP
-        
-        print("Start: 2d-SHAP computation")
-
         time_init=time()
         knn_2d_values = knn_2d.knnsv2d(self.X, self.y, self.X_val, self.y_val).T
         self.data_value_dict['2d-knn'] = knn_2d_values.mean(axis=1)
@@ -143,15 +125,41 @@ class DataValuation(object):
         self.df_value_dict['random'] = random_values
         self.time_dict['random'] = time() - time_init       
 
+    
+        print("Start: Learn-OOB computation")
+        time_init=time()
+        X_y = np.concatenate((self.X,self.y.reshape(-1,1)), axis=1)
+        if 'data-oob' not in self.data_value_dict:
+            raise ValueError("You should fit Data-OOB first!")
+        oob = self.data_value_dict['data-oob']
         
-        # time_init=time()
-        # mc_2d_values = mc_2d.mcsv2d(self.X, self.y, self.X_val, self.y_val)
-        # self.data_value_dict['2d-mc'] = mc_2d_values.mean(axis=1)
-        # self.feature_value_dict['2d-mc'] = mc_2d_values.mean(axis=0)
-        # self.df_value_dict['2d-mc'] = mc_2d_values
-        # self.time_dict['2d-mc']=time()-time_init
-
-        print("Done: 2d-SHAP computation")
+        X_y_train, X_y_val, oob_train, oob_val = train_test_split(X_y, oob, test_size=int(0.1 * X_y.shape[0]), random_state=0)
+    
+        dtrain = xgb.DMatrix(X_y_train, label=oob_train)
+        dval = xgb.DMatrix(X_y_val, label=oob_val)
+        
+        params = {
+            'objective': 'reg:squarederror',
+            'eval_metric': 'rmse',
+            'learning_rate': 0.01,
+            'random_state':0
+        }
+    
+        model = xgb.train(
+            params, dtrain, num_boost_round=1000, 
+            evals=[(dtrain, 'train'), (dval, 'eval')], 
+            early_stopping_rounds=10, 
+            verbose_eval=0
+        )
+        
+        explainer = shap.TreeExplainer(model)
+        shap_values = explainer(X_y)
+        local_importance = shap_values.values
+                
+        self.df_value_dict['Learn-OOB'] = local_importance[:,:-1]
+        self.time_dict['Learn-OOB']=time()-time_init
+        
+        print("Done: Learn-OOB computation")
     
     def prepare_data_valuation_baseline(self):
         from opendataval.dataloader import DataFetcher
@@ -170,7 +178,6 @@ class DataValuation(object):
             return np.eye(num_classes)[y]
         
         pred_model = ClassifierSkLearnWrapper(tree.DecisionTreeClassifier, 2)
-        # pred_model = LogisticRegression(self.X.shape[1], 1)
         fetcher = DataFetcher.from_data_splits(self.X, one_hot_encode(self.y), self.X_val, one_hot_encode(self.y_val), self.X_test, one_hot_encode(self.y_test), one_hot=True)
 
         time_init=time()
@@ -179,7 +186,7 @@ class DataValuation(object):
         self.time_dict['lava']=time()-time_init        
 
         time_init=time()
-        datashapley = DataShapley(gr_threshold=1.05, max_mc_epochs=300).train(fetcher=fetcher, pred_model=pred_model)
+        datashapley = DataShapley(gr_threshold=1.05, max_mc_epochs=300, models_per_epoch=3000).train(fetcher=fetcher, pred_model=pred_model)
         self.data_value_dict['datashapley'] = datashapley.data_values
         self.time_dict['datashapley']=time()-time_init       
 
@@ -199,7 +206,7 @@ class DataValuation(object):
         self.time_dict['DataBanzhaf']=time()-time_init 
 
     def evaluate_data_values(self, noisy_index, beta_true, error_index, error_row_index, X_test, y_test,
-                             experiments, outlier_inds=None):# outlier_inds_0=None, outlier_inds_1=None):
+                             experiments, outlier_inds=None, X_original=None):# outlier_inds_0=None, outlier_inds_1=None):
 
         
         if 'noisy' in experiments:
@@ -237,14 +244,19 @@ class DataValuation(object):
             self.time_dict['Eval:feature_removal']=time()-time_init
             
         if 'cell_removal' in experiments:
+            print("Fixation starts")
+            time_init=time()
+            self.cell_fixation_dict=utils_eval.cell_fixation_experiment(self.df_value_dict, self.X, self.y, self.X_test, self.y_test,X_original=X_original)
+            self.time_dict['Eval:cell_fixation']=time()-time_init
+            print("Fixation ends")
+
             time_init=time()
             self.cell_removal_dict=utils_eval.cell_removal_experiment(self.df_value_dict, self.X, self.y, self.X_test, self.y_test)
             self.time_dict['Eval:cell_removal']=time()-time_init
-        
+
         if 'outlier' in experiments:
             time_init=time()
             self.outlier_detect_dict=utils_eval.outlier_detection_experiment(self.df_value_dict, outlier_inds,self.X, self.y)
-            # self.outlier_detect_dict=utils_eval.outlier_detection_experiment(self.df_value_dict, outlier_inds_0, outlier_inds_1,self.X, self.y)
             self.time_dict['Eval:outlier']=time()-time_init
 
         if 'error' in experiments:
@@ -273,6 +285,7 @@ class DataValuation(object):
                      'outlier':self.outlier_detect_dict,
                      'point_removal': self.point_removal_dict,
                      'feature_removal':self.feature_removal_dict,
+                     'cell_fixation':self.cell_fixation_dict,
                      'cell_removal':self.cell_removal_dict,
                      'loo':self.loo_dict,
                      'dargs':self.dargs,

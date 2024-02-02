@@ -76,34 +76,15 @@ class FeatureApproach(object):
             else:
                 raise NotImplementedError('Reg problem not implemented yet!')
             self.rf_model_subset.fit(self.X, self.y, subset_ratio=subset_ratio)
-            # self.time_dict['df_oob_fitting-%.3f'%subset_ratio]=time()-time_init
             fitting_time=time()-time_init
-            for weight in [0, 0.5, 1, 3, 5]:
+            for weight in [0, 1]:
                 time_init=time()
                 df_oob_series = self.rf_model_subset.evaluate_dfoob_accuracy_distance(self.X, self.y, weight=weight)
                 df_oob = df_oob_series.values.reshape(self.X.shape[0],self.X.shape[1])
                 df_oob_data, df_oob_feature = np.mean(df_oob,axis=1), np.mean(df_oob,axis=0)
-                
-                if subset_ratio == 'varying':
-                    # self.df_value_dict['df-oob-%s'%subset_ratio]=df_oob
-                    # self.data_value_dict['df-oob-%s'%subset_ratio]=df_oob_data
-                    # self.feature_value_dict['df-oob-%s'%subset_ratio]=df_oob_feature
-                    # self.time_dict['df-oob-%s'%subset_ratio]=time()-time_init + fitting_time
-                    raise NotImplementedError('not implemented yet!')
+                self.df_value_dict['df-oob-%.2f-%.3f'%(subset_ratio,weight)]=df_oob
+                self.data_value_dict['df-oob-%.2f-%.3f'%(subset_ratio,weight)]=df_oob_data
+                self.feature_value_dict['df-oob-%.2f-%.3f'%(subset_ratio,weight)]=df_oob_feature
+                self.time_dict['df-oob-%.2f-%.3f'%(subset_ratio,weight)]=time()-time_init + fitting_time
 
-                else:                
-                    self.df_value_dict['df-oob-%.2f-%.3f'%(subset_ratio,weight)]=df_oob
-                    self.data_value_dict['df-oob-%.2f-%.3f'%(subset_ratio,weight)]=df_oob_data
-                    self.feature_value_dict['df-oob-%.2f-%.3f'%(subset_ratio,weight)]=df_oob_feature
-                    self.time_dict['df-oob-%.2f-%.3f'%(subset_ratio,weight)]=time()-time_init + fitting_time
-
-            #ablation
-            time_init=time()
-            df_oob_series = self.rf_model_subset.evaluate_dfoob_accuracy_distance(self.X, self.y, weight=weight, abl=True)
-            df_oob = df_oob_series.values.reshape(self.X.shape[0],self.X.shape[1])
-            df_oob_data, df_oob_feature = np.mean(df_oob,axis=1), np.mean(df_oob,axis=0)
-            self.df_value_dict['df-oob-%.2f-abl'%(subset_ratio)]=df_oob
-            self.data_value_dict['df-oob-%.2f-abl'%(subset_ratio)]=df_oob_data
-            self.feature_value_dict['df-oob-%.2f-abl'%(subset_ratio)]=df_oob_feature
-            self.time_dict['df-oob-%.2f-abl'%(subset_ratio)]=time()-time_init + fitting_time
         print(f'Done: DF-OOB computation')

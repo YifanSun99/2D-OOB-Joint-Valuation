@@ -3,8 +3,12 @@ import pandas as pd
 import pickle
 from scipy.stats import t
 import tqdm
+from scipy.stats import norm
 
-# def add_outliers(X, y, outlier_addition = 'spreadout'):
+def extreme_prob(x, mean, std):
+    z = (x - mean) / std
+    return norm.cdf(-np.abs(z)) + (1 - norm.cdf(np.abs(z)))
+
 def add_outliers(X, y, outlier_addition = 'two_stage'):
     def normpdf(x, mean, std):
         var = float(std)**2
@@ -33,23 +37,14 @@ def add_outliers(X, y, outlier_addition = 'two_stage'):
     
     all_feat_stats = {0: [feat_means_0, feat_stds_0, 0.01], 1: [feat_means_1, feat_stds_1, 0.01]}
 
-    if outlier_addition == 'spreadout':
-        print("spreadout")
-        total_cells = X.shape[0] * X.shape[1]
-        amt = int(0.04 * total_cells)
-        outlier_inds = np.sort(np.random.choice(range(total_cells), amt, replace=False))
-    elif outlier_addition == 'two_stage':
-        print("two_stage")
-        selected_rows = np.random.choice(X.shape[0], size=int(0.2*X.shape[0]), replace=False)
-        outlier_inds_list = []
-        for row in selected_rows:
-            selected_cols = np.random.choice(X.shape[1], size=max(int(0.2*X.shape[1]),1), replace=False)
-            for col in selected_cols:
-                flattened_index = row * X.shape[1] + col
-                outlier_inds_list.append(flattened_index)
-        outlier_inds = np.sort(np.array(outlier_inds_list))
-    else:
-        raise NotImplementedError
+    selected_rows = np.random.choice(X.shape[0], size=int(0.4*X.shape[0]), replace=False)
+    outlier_inds_list = []
+    for row in selected_rows:
+        selected_cols = np.random.choice(X.shape[1], size=max(int(0.4*X.shape[1]),1), replace=False)
+        for col in selected_cols:
+            flattened_index = row * X.shape[1] + col
+            outlier_inds_list.append(flattened_index)
+    outlier_inds = np.sort(np.array(outlier_inds_list))
 
     X_with_outliers = X.copy()
     outlier_mask = np.zeros_like(X)
@@ -67,10 +62,8 @@ def add_outliers(X, y, outlier_addition = 'two_stage'):
 
         while norm_val > likeli:
             feat = np.random.normal(0,1)
-            norm_val = normpdf(feat, feat_mean[col], feat_std[col])
-        
-        # rnd_sign = int(np.random.normal(0,1) > 0)
-        # X_with_outliers[row, col] = feat_mean[col] + rnd_sign * 2.715 * feat_std[col]
+            norm_val = extreme_prob(feat, feat_mean[col], feat_std[col])
+
         X_with_outliers[row, col] = feat
         outlier_mask[row, col] = 1
     
@@ -273,8 +266,6 @@ def preprocess_and_split_dataset(data, beta_true, experiment, target, n_train, n
     else:
         # regression
         raise NotImplementedError('Reg problem not implemented yet!')
-        # target_mean, target_std= np.mean(target, 0), np.std(target, 0)
-        # target = (target - target_mean) / np.clip(target_std, 1e-12, None)
 
     # check constant columns
     constant_columns = np.where(np.std(data, axis=0) == 0)[0]
@@ -286,7 +277,6 @@ def preprocess_and_split_dataset(data, beta_true, experiment, target, n_train, n
     data_mean, data_std= np.mean(data, 0), np.std(data, 0)
     data = (data - data_mean) / np.clip(data_std, 1e-12, None)
     n_total=n_train + n_val + n_test
-    # print(data.mean(axis=0),data.std(axis=0))
 
     if len(data) >  n_total:
         X=data[:n_train]
@@ -298,30 +288,7 @@ def preprocess_and_split_dataset(data, beta_true, experiment, target, n_train, n
     else:
         assert False, f"Original dataset is less than n_train + n_val + n_test. {len(data)} vs {n_total}. Try again with a smaller number for validation or test."
     
-    if experiment == 'error':
-        # observe data with measurement error (note this is only done for training data)
-        if error_mech == 'noise':
-            # error = np.random.normal(scale=1,size=X.shape)
-            error = t.rvs(df=1, size=X.shape)
-        elif error_mech == 'adv':
-            eta = 5
-            c = int(error_col_rate*X.shape[1])
-            inner_dot = X.dot(beta_true)
-            error = np.tile(-inner_dot / c - np.sign(y.reshape(-1,1) - 0.5) * eta / c,(1,X.shape[1]))
-            assert error.shape == X.shape
-    
-        # by row
-        error_indicator = np.zeros(X.shape, dtype=int)
-        error_row_index = np.sort(np.random.choice(X.shape[0], int(error_row_rate*X.shape[0]), replace=False))
-        for i in error_row_index:
-            random_indices = np.random.choice(X.shape[1], int(error_col_rate*X.shape[1]), replace=False)
-            error_indicator[i, random_indices] = 1
-    
-        error_index = error_indicator
-        X_original = X.copy()
-        X += error*error_indicator
-        
-    elif experiment == 'outlier':
+    if experiment == 'outlier':
         X_original = X.copy()
         X, error_index, error_row_index = add_outliers(X, y)
     else:

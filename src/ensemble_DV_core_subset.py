@@ -77,9 +77,6 @@ def _parallel_build_trees(
         n_samples = X.shape[0]
         n_features = X.shape[1]
         if subset_ratio == 'varying':
-            # alpha = np.array([2,2,2,2,2,1,1,1,1])
-            # p = dirichlet.rvs(alpha,size=1)
-            # subset_ratio = np.random.choice([0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9],p=p.reshape(-1))
             subset_ratio = np.random.choice([0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9])
         n_features_used = max(round(subset_ratio*(n_features)),1)
         if sample_weight is None:
@@ -418,7 +415,6 @@ class RandomForestClassifierDV_subset(RandomForestClassifier):
                 dfoob[(i,j)] = [0,0]
                 
         in_features_index = [np.where(i == 1)[0] for i in self._ensemble_features]  
-        # print(in_features_index)
         
         for i, weak_learner in enumerate(self.estimators_):
             oob_ind=np.where(self._ensemble_X[i] == 0)[0]
@@ -448,7 +444,6 @@ class RandomForestClassifierDV_subset(RandomForestClassifier):
                 dfoob[(i,j)] = [0,0]
                 
         in_features_index = [np.where(i == 1)[0] for i in self._ensemble_features]  
-        # print(in_features_index)
         
         for i, weak_learner in enumerate(self.estimators_):
             oob_ind=np.where(self._ensemble_X[i] == 0)[0]
